@@ -88,7 +88,9 @@ while animation:
 
             for points in range(len(p1)):
                 cv2.circle(nxt_im, (int(p1[points][0]), int(p1[points][1])), 4, (0, 255, 0), -1)
-            cv2.imshow('HEART VIDEO', nxt_im)
+
+            window_title = "HEART VIDEO {}"
+            cv2.imshow(window_title, nxt_im)
 
             p0 = p1
             im, gray, blur = nxt_im, nxt_gray, nxt_blur
