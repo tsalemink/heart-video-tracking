@@ -22,9 +22,7 @@ class CoordinateStore:
             self.points.append((x, y))
 
 
-path = './images'
-fname = 'HeartVideo0001.jpg'
-PS = Processing(path, fname)
+""" Define path to the video frames """
 
 path = './HeartVideoFrames'
 animation = True
