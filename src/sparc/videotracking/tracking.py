@@ -3,8 +3,8 @@ import time
 import numpy as np
 import cv2
 
-from processing import Processing
-from lkopticalflow import LKOpticalFlow
+from sparc.videotracking.processing import Processing
+from sparc.videotracking.lkopticalflow import LKOpticalFlow
 
 
 class CoordinateStore:
@@ -31,7 +31,7 @@ count = 1
 
 CS = CoordinateStore()
 
-lk = LKOpticalFlow(win=(20, 20), max=2)
+lk = LKOpticalFlow(win=(20, 20), max_level=2)
 
 
 while animation:
