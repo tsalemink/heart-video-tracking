@@ -1,62 +1,49 @@
-import os
+
 import numpy as np
 import cv2
 
 
 class Processing:
-    def __init__(self, path, filename):
-        self.path = path
-        self.fname = filename
-        self.imfile = os.path.join(self.path, self.fname)
 
-        self.image = None
-        self.roi = None
-        self.gray = None
-        self.blur = None
+    def __init__(self):
+        self._image = None
+        self._gray = None
+        self._blur = None
+        self._mask = None
 
-        self.mask = None
-        self.feature_image = None
-
-    def read_image(self):
-        self.image = cv2.imread(self.imfile, 1)
-
-        return self.image
-
-    def select_roi(self):
-        if self.image is None:
-            raise Exception("No image selected! Please read the image first.")
-        self.roi = cv2.selectROI(self.image)
-        cv2.destroyAllWindows()
-        return self.roi
+    def read_image(self, file_name):
+        self._image = cv2.imread(file_name, 1)
 
     def filter_and_threshold(self):
-        if self.image is None:
+        if self._image is None:
             raise Exception("No image selected! Please read the image first.")
 
-        self.gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-        self.blur = cv2.GaussianBlur(self.gray, (5, 5), 0)
+        self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
+        self._blur = cv2.GaussianBlur(self._gray, (5, 5), 0)
 
-        return self.gray, self.blur
+        return self._gray, self._blur
 
     def mask_and_image(self, roi):
         r = roi
-        self.mask = np.zeros(self.blur.shape[:2], dtype=np.uint8)
-        cv2.rectangle(self.mask, (r[0], r[1]), (r[0] + r[2], r[1] + r[3]), 255, thickness=-1)
+        self._mask = np.zeros(self._blur.shape[:2], dtype=np.uint8)
+        cv2.rectangle(self._mask, (r[0], r[1]), (r[0] + r[2], r[1] + r[3]), 255, thickness=-1)
 
-        return self.mask
+        return self._mask
 
-    def feature_detect(self, h=2000):
+    def feature_detect(self, h=2000, report_values=False):
 
-        minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(self.blur)
+        if report_values:
+            minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(self._blur)
+            print(minVal, maxVal, minLoc, maxLoc)
 
         surf = cv2.xfeatures2d.SURF_create(h)
-        kp, dst = surf.detectAndCompute(self.blur, self.mask)
+        kp, dst = surf.detectAndCompute(self._blur, self._mask)
 
-        filtered_kp = [x for x in kp if not self.blur[int(x.pt[0]), int(x.pt[1])] > 80]
+        filtered_kp = [x for x in kp if not self._blur[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)] > 80]
 
-        self.feature_image = cv2.drawKeypoints(self.image, filtered_kp, self.image)
+        # self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
 
-        return filtered_kp, dst, self.feature_image
+        return filtered_kp, dst
 
     def grab_cut(self):
         mask = np.zeros(self.image.shape[:2], np.uint8)
