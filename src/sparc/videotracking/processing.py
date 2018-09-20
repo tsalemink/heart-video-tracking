@@ -11,6 +11,9 @@ class Processing:
         self._blur = None
         self._mask = None
 
+    def get_gray_image(self):
+        return self._gray
+
     def read_image(self, file_name):
         self._image = cv2.imread(file_name, 1)
 
