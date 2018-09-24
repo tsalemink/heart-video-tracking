@@ -1,9 +1,10 @@
-import os, time
+import os
+import time
 import numpy as np
 import cv2
 
-from Processing import Processing
-from LKOpticalFlow import LKOpticalFlow
+from sparc.videotracking.processing import Processing
+from sparc.videotracking.lkopticalflow import LKOpticalFlow
 
 
 class CoordinateStore:
@@ -24,24 +25,25 @@ class CoordinateStore:
 
 """ Define path to the video frames """
 
-path = './HeartVideoFrames'
+path = r'C:\Users\hsor001\Projects\Data\HeartVideoFramesShort'
 animation = True
 count = 1
 
 CS = CoordinateStore()
 
-lk = LKOpticalFlow(win=(20, 20), max=2)
+lk = LKOpticalFlow(win=(20, 20), max_level=2)
 
 
 while animation:
     for i in sorted(os.listdir(path)):
         if count == 1:
-            fname = i
-            PS = Processing(path, fname)
+            file_name = i
+            PS = Processing(path, file_name)
             im = PS.read_image()
             gray, blur = PS.filter_and_threshold()
 
             ROI = PS.select_roi()
+            print(ROI)
             mask = PS.mask_and_image(ROI)
 
             kp, dst, feature_image = PS.feature_detect()
@@ -71,14 +73,16 @@ while animation:
             cv2.destroyAllWindows()
 
             cs_array = np.asarray(CS.points, dtype=np.float32)
+            print(cs_array)
+            print(kp_array)
 
             p0 = np.concatenate((kp_array, cs_array))
 
         else:
             if PS is not None: del PS
 
-            fname = i
-            PS = Processing(path, fname)
+            file_name = i
+            PS = Processing(path, file_name)
             nxt_im = PS.read_image()
             nxt_gray, nxt_blur = PS.filter_and_threshold()
 
@@ -101,5 +105,7 @@ while animation:
         if k == 27:
             animation = False
             break
+
+    animation = False
 
 cv2.destroyAllWindows()
