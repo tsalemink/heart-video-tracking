@@ -1,4 +1,3 @@
-
 import numpy as np
 import cv2
 
@@ -22,7 +21,7 @@ class Processing:
             raise Exception("No image selected! Please read the image first.")
 
         self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
-        self._blur = cv2.GaussianBlur(self._gray, (5, 5), 0)
+        self._blur = cv2.GaussianBlur(self._gray, (9, 9), 0)
 
         return self._gray, self._blur
 
@@ -42,7 +41,15 @@ class Processing:
         surf = cv2.xfeatures2d.SURF_create(h)
         kp, dst = surf.detectAndCompute(self._blur, self._mask)
 
-        filtered_kp = [x for x in kp if not self._blur[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)] > 80]
+        print(self._gray)
+        print(np.mean(self._gray))
+        print(np.max(self._gray))
+        print(np.min(self._gray))
+
+        for x in kp:
+            print(self._gray[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)])
+
+        filtered_kp = [x for x in kp if not self._gray[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)] == 7]
 
         # self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
 
