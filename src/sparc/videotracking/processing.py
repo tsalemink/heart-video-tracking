@@ -16,12 +16,14 @@ class Processing:
     def read_image(self, file_name):
         self._image = cv2.imread(file_name, 1)
 
-    def filter_and_threshold(self):
+    def filter_and_threshold(self, threshold=None):
         if self._image is None:
             raise Exception("No image selected! Please read the image first.")
 
+        th = 5 if threshold is None else threshold
+
         self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
-        self._blur = cv2.GaussianBlur(self._gray, (9, 9), 0)
+        self._blur = cv2.GaussianBlur(self._gray, (th, th), 0)
 
         return self._gray, self._blur
 
@@ -38,18 +40,28 @@ class Processing:
             minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(self._blur)
             print(minVal, maxVal, minLoc, maxLoc)
 
+        image = cv2.cvtColor(self._gray, cv2.COLOR_GRAY2BGR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        blur = cv2.GaussianBlur(image, (5, 5), 0)
+        image_blur_hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
+        mask = np.zeros(image_blur_hsv.shape[:2], dtype=np.uint8)
         surf = cv2.xfeatures2d.SURF_create(h)
-        kp, dst = surf.detectAndCompute(self._blur, self._mask)
+        kp, dst = surf.detectAndCompute(image_blur_hsv, mask)
+        # kp, dst = surf.detectAndCompute(self._gray, self._mask)
+        print("len of kp")
+        print(len(kp))
 
-        print(self._gray)
-        print(np.mean(self._gray))
-        print(np.max(self._gray))
-        print(np.min(self._gray))
+        # min_value = np.array([0, 100, 80])
+        # max_value = np.array([10, 256, 256])
+        # mask1 = cv2.inRange(image_blur_hsv, min_value, max_value)
+        #
+        # min_value2 = np.array([170, 100, 80])
+        # max_value2 = np.array([180, 256, 256])
+        # mask2 = cv2.inRange(image_blur_hsv, min_value2, max_value2)
+        #
+        # mask = mask1 + mask2
 
-        for x in kp:
-            print(self._gray[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)])
-
-        filtered_kp = [x for x in kp if not self._gray[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)] == 7]
+        filtered_kp = [x for x in kp if not image_blur_hsv[int(x.pt[0]), int(x.pt[1])] > 200]
 
         # self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
 
