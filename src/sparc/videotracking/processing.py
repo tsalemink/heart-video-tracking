@@ -34,16 +34,25 @@ class Processing:
 
         return self._mask
 
+    @staticmethod
+    def electrode_boundary():
+        return np.array([0, 0, 0], dtype="uint8"), np.array([180, 255, 30], dtype="uint8")
+
+    def detect_electrode(self):
+        min_boundary, max_boudary = Processing.electrode_boundary()
+
     def feature_detect(self, h=2000, report_values=False):
 
         if report_values:
             minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(self._blur)
             print(minVal, maxVal, minLoc, maxLoc)
 
-        image = cv2.cvtColor(self._gray, cv2.COLOR_GRAY2BGR)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # image = cv2.cvtColor(self._gray, cv2.COLOR_GRAY2BGR)
+        image = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
+        print(image.shape)
         blur = cv2.GaussianBlur(image, (5, 5), 0)
         image_blur_hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
+
         mask = np.zeros(image_blur_hsv.shape[:2], dtype=np.uint8)
         surf = cv2.xfeatures2d.SURF_create(h)
         kp, dst = surf.detectAndCompute(image_blur_hsv, mask)
@@ -61,7 +70,7 @@ class Processing:
         #
         # mask = mask1 + mask2
 
-        filtered_kp = [x for x in kp if not image_blur_hsv[int(x.pt[0]), int(x.pt[1])] > 200]
+        filtered_kp = [x for x in kp if not image_blur_hsv[int(x.pt[0] + 0.5), int(x.pt[1]) + 0.5] > 200]
 
         # self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
 
