@@ -9,6 +9,14 @@ class Processing:
         self._gray = None
         self._blur = None
         self._mask = None
+        self.roi = None
+
+    def select_roi(self, im):
+        if self._image is None:
+            raise Exception("No image selected! Please read the image first.")
+        self.roi = cv2.selectROI(im)
+        cv2.destroyAllWindows()
+        return self.roi
 
     def get_gray_image(self):
         return self._gray
@@ -38,8 +46,10 @@ class Processing:
     def electrode_boundary():
         return np.array([0, 0, 0], dtype="uint8"), np.array([180, 255, 30], dtype="uint8")
 
-    def detect_electrode(self):
-        min_boundary, max_boudary = Processing.electrode_boundary()
+    def detect_electrode(self, im):
+        min_boundary, max_boudary = self.electrode_boundary()
+        electrode_mask = cv2.inRange(im, min_boundary, max_boudary)
+        return electrode_mask
 
     def feature_detect(self, h=2000, report_values=False):
 
@@ -49,26 +59,21 @@ class Processing:
 
         # image = cv2.cvtColor(self._gray, cv2.COLOR_GRAY2BGR)
         image = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
-        print(image.shape)
         blur = cv2.GaussianBlur(image, (5, 5), 0)
         image_blur_hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
 
-        mask = np.zeros(image_blur_hsv.shape[:2], dtype=np.uint8)
+        mask_image = self.detect_electrode(image_blur_hsv)
+
+        print(np.max(mask_image))
+        print(np.min(mask_image))
+
+        mask = np.zeros(mask_image.shape[:2], dtype=np.uint8)
+
         surf = cv2.xfeatures2d.SURF_create(h)
-        kp, dst = surf.detectAndCompute(image_blur_hsv, mask)
+        kp, dst = surf.detectAndCompute(mask_image, mask)
         # kp, dst = surf.detectAndCompute(self._gray, self._mask)
         print("len of kp")
         print(len(kp))
-
-        # min_value = np.array([0, 100, 80])
-        # max_value = np.array([10, 256, 256])
-        # mask1 = cv2.inRange(image_blur_hsv, min_value, max_value)
-        #
-        # min_value2 = np.array([170, 100, 80])
-        # max_value2 = np.array([180, 256, 256])
-        # mask2 = cv2.inRange(image_blur_hsv, min_value2, max_value2)
-        #
-        # mask = mask1 + mask2
 
         filtered_kp = [x for x in kp if not image_blur_hsv[int(x.pt[0] + 0.5), int(x.pt[1]) + 0.5] > 200]
 
