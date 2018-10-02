@@ -11,6 +11,7 @@ class Processing:
         self._mask = None
         self.roi = None
 
+    # TEMPORARY ROI SELECTOR METHOD
     def select_roi(self, im):
         if self._image is None:
             raise Exception("No image selected! Please read the image first.")
