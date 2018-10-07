@@ -12,10 +12,11 @@ class Processing:
         self.roi = None
 
     # TEMPORARY ROI SELECTOR METHOD
-    def select_roi(self, im):
+    def select_roi(self):
         if self._image is None:
-            raise Exception("No image selected! Please read the image first.")
-        self.roi = cv2.selectROI(im)
+            raise Exception("ROI---No image selected! Please read the image first.")
+
+        self.roi = cv2.selectROI(self._image)
         cv2.destroyAllWindows()
         return self.roi
 
@@ -23,7 +24,9 @@ class Processing:
         return self._gray
 
     def read_image(self, file_name):
+        print("reading image...")
         self._image = cv2.imread(file_name, 1)
+        print(self._image)
 
     def filter_and_threshold(self, threshold=None):
         if self._image is None:
@@ -59,28 +62,29 @@ class Processing:
             print(minVal, maxVal, minLoc, maxLoc)
 
         # image = cv2.cvtColor(self._gray, cv2.COLOR_GRAY2BGR)
-        image = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
-        blur = cv2.GaussianBlur(image, (5, 5), 0)
-        image_blur_hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
-
-        mask_image = self.detect_electrode(image_blur_hsv)
-
-        print(np.max(mask_image))
-        print(np.min(mask_image))
-
-        mask = np.zeros(mask_image.shape[:2], dtype=np.uint8)
+        # image = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
+        # blur = cv2.GaussianBlur(image, (5, 5), 0)
+        # image_blur_hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
+        #
+        # mask_image = self.detect_electrode(image_blur_hsv)
+        #
+        # print(np.max(mask_image))
+        # print(np.min(mask_image))
+        #
+        # mask = np.zeros(mask_image.shape[:2], dtype=np.uint8)
 
         surf = cv2.xfeatures2d.SURF_create(h)
-        kp, dst = surf.detectAndCompute(mask_image, mask)
-        # kp, dst = surf.detectAndCompute(self._gray, self._mask)
+        # kp, dst = surf.detectAndCompute(mask_image, mask)
+        kp, dst = surf.detectAndCompute(self._gray, self._mask)
         print("len of kp")
         print(len(kp))
 
-        filtered_kp = [x for x in kp if not image_blur_hsv[int(x.pt[0] + 0.5), int(x.pt[1]) + 0.5] > 200]
+        # filtered_kp = [x for x in kp if not image_blur_hsv[int(x.pt[0] + 0.5), int(x.pt[1]) + 0.5] > 200]
+        filtered_kp = [x for x in kp if not self._gray[int(x.pt[0]+ 0.5), int(x.pt[1]+ 0.5)] > 200]
 
-        # self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
+        self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
 
-        return filtered_kp, dst
+        return filtered_kp, dst, self.feature_image
 
     def grab_cut(self):
         mask = np.zeros(self.image.shape[:2], np.uint8)
