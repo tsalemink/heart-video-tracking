@@ -8,8 +8,10 @@ class Processing:
         self._image = None
         self._gray = None
         self._blur = None
+        self._rgb = None
         self._mask = None
         self.roi = None
+        self.threshold = None
 
     # TEMPORARY ROI SELECTOR METHOD
     def select_roi(self):
@@ -20,24 +22,31 @@ class Processing:
         cv2.destroyAllWindows()
         return self.roi
 
-    def get_gray_image(self):
-        return self._gray
-
     def read_image(self, file_name):
         print("reading image...")
         self._image = cv2.imread(file_name, 1)
         print(self._image)
 
-    def filter_and_threshold(self, threshold=None):
+    def gray_and_blur(self, threshold=None):
+        if self._image is None:
+            raise Exception("No image selected! Please read the image first.")
+        self.threshold = 5 if threshold is None else threshold
+
+        self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
+        if self._blur is not None:
+            self._blur = None
+        self._blur = cv2.GaussianBlur(self._gray, (self.threshold, self.threshold), 0)
+
+        return self._gray, self._blur
+
+    def rgb_and_blur_and_hsv(self, threshold=None):
         if self._image is None:
             raise Exception("No image selected! Please read the image first.")
 
-        th = 5 if threshold is None else threshold
-
-        self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
-        self._blur = cv2.GaussianBlur(self._gray, (th, th), 0)
-
-        return self._gray, self._blur
+        self._rgb = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
+        if self._blur is not None:
+            self._blur = None
+        self._blur = cv2.GaussianBlur(self._gray, (self.threshold, self.threshold), 0)
 
     def mask_and_image(self, roi):
         r = roi
