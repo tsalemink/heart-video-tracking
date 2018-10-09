@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 
 
 class Processing:
@@ -28,10 +28,13 @@ class Processing:
         cv2.destroyAllWindows()
         return self.roi
 
+    def get_filtered_image(self):
+        return self._blur_hsv
+
     def read_image(self, file_name):
-        print("reading image...")
+        # print("reading image...")
         self._image = cv2.imread(file_name, 1)
-        print(self._image)
+        # print(self._image)
 
     def gray_and_blur(self, threshold=None):
         if self._image is None:
@@ -55,9 +58,6 @@ class Processing:
             self._blur = None
         self._blur = cv2.GaussianBlur(self._rgb, (self.threshold, self.threshold), 0)
         self._blur_hsv = cv2.cvtColor(self._blur, cv2.COLOR_RGB2HSV)
-
-        self._blur = None
-        _, self._blur = self.gray_and_blur()
 
     def mask_and_image(self, roi):
         r = roi
@@ -89,6 +89,7 @@ class Processing:
         return self._electrode_mask
 
     def final_mask(self):
+        # self.mask_and_image(self.roi)
         self._finalmask = self._electrode_mask + self._roi_mask
         return self._finalmask
 
@@ -110,7 +111,6 @@ class Processing:
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                               cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-        # self._bgr = cv2.cvtColor(circled, cv2.COLOR_RGB2BGR)
         # plt.figure(figsize=(10, 10))
         # plt.imshow(self._bgr, interpolation='nearest')
         # plt.show()
@@ -176,5 +176,3 @@ class Processing:
         if show:
             cv2.imshow('Ventricle Edge', blend)
             cv2.waitKey(0)
-
-
