@@ -29,12 +29,10 @@ class Processing:
         return self.roi
 
     def get_filtered_image(self):
-        return self._blur_hsv
+        return self._blur_hsv, self._gray
 
     def read_image(self, file_name):
-        # print("reading image...")
         self._image = cv2.imread(file_name, 1)
-        # print(self._image)
 
     def gray_and_blur(self, threshold=None):
         if self._image is None:
@@ -45,7 +43,6 @@ class Processing:
         if self._blur is not None:
             self._blur = None
         self._blur = cv2.GaussianBlur(self._gray, (self.threshold, self.threshold), 0)
-
         return self._gray, self._blur
 
     def rgb_and_blur_and_hsv(self, threshold=None):
@@ -56,14 +53,15 @@ class Processing:
         self._rgb = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
         if self._blur is not None:
             self._blur = None
+        self._gray, _ = self.gray_and_blur()
         self._blur = cv2.GaussianBlur(self._rgb, (self.threshold, self.threshold), 0)
         self._blur_hsv = cv2.cvtColor(self._blur, cv2.COLOR_RGB2HSV)
+        return self._gray
 
     def mask_and_image(self, roi):
         r = roi
         self._roi_mask = np.zeros(self._blur.shape[:2], dtype=np.uint8)
         cv2.rectangle(self._roi_mask, (r[0], r[1]), (r[0] + r[2], r[1] + r[3]), 255, thickness=-1)
-
         return self._roi_mask
 
     @staticmethod
@@ -89,7 +87,6 @@ class Processing:
         return self._electrode_mask
 
     def final_mask(self):
-        # self.mask_and_image(self.roi)
         self._finalmask = self._electrode_mask + self._roi_mask
         return self._finalmask
 
@@ -110,11 +107,6 @@ class Processing:
 
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                               cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-
-        # plt.figure(figsize=(10, 10))
-        # plt.imshow(self._bgr, interpolation='nearest')
-        # plt.show()
-        # print("done")
         return keypoints, circled
 
     @staticmethod
@@ -148,7 +140,6 @@ class Processing:
         kp, dst = surf.detectAndCompute(self._gray, self._roi_mask)
         filtered_kp = [x for x in kp if not self._gray[int(x.pt[0]+ 0.5), int(x.pt[1]+ 0.5)] > 200]
         self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
-
         return filtered_kp, dst, self.feature_image
 
     def grab_cut(self):
@@ -176,3 +167,5 @@ class Processing:
         if show:
             cv2.imshow('Ventricle Edge', blend)
             cv2.waitKey(0)
+        return None
+
