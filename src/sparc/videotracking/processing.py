@@ -53,9 +53,10 @@ class Processing:
         self._rgb = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
         if self._blur is not None:
             self._blur = None
-        self._gray, _ = self.gray_and_blur()
+
         self._blur = cv2.GaussianBlur(self._rgb, (self.threshold, self.threshold), 0)
         self._blur_hsv = cv2.cvtColor(self._blur, cv2.COLOR_RGB2HSV)
+        self._gray, self._blur = self.gray_and_blur()
         return self._gray
 
     def mask_and_image(self, roi):
