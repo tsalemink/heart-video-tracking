@@ -1,5 +1,7 @@
 import numpy as np
 import cv2
+
+
 # from matplotlib import pyplot as plt
 
 
@@ -42,6 +44,10 @@ class Processing:
         self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
         if self._blur is not None:
             self._blur = None
+
+        # retval, thresholded = cv2.threshold(self._gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # cv2.imshow('Thresholded Image', self._gray)
+        # cv2.waitKey(0)
         self._blur = cv2.GaussianBlur(self._gray, (self.threshold, self.threshold), 0)
         return self._gray, self._blur
 
@@ -72,14 +78,17 @@ class Processing:
     @staticmethod
     def some_paramerters():
         params = cv2.SimpleBlobDetector_Params()
-        params.minThreshold = 100;
-        params.maxThreshold = 255;
+        params.minThreshold = 90;
+        params.maxThreshold = 200;
         params.filterByArea = True
-        params.maxArea = 100
+        params.maxArea = 200
         params.filterByCircularity = True
         params.minCircularity = 0.3
         params.filterByConvexity = True
         params.minConvexity = 0.45
+        params.filterByInertia = True
+        params.minInertiaRatio = 0.2
+        params.maxInertiaRatio = 1
         return params
 
     def detect_electrode(self):
@@ -107,7 +116,7 @@ class Processing:
         keypoints = detector.detect(overlay)
 
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
-                                              cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+                                    cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         return keypoints, circled
 
     @staticmethod
@@ -117,7 +126,7 @@ class Processing:
         contour_sizes = [(cv2.contourArea(contour), contour) for contour in contours]
         biggest_contour = max(contour_sizes, key=lambda x: x[0])[1]
         mask = np.zeros(input_mask.shape, np.uint8)
-        cv2.drawContours(mask, [biggest_contour], -1, (0,255,0), 3)
+        cv2.drawContours(mask, [biggest_contour], -1, (0, 255, 0), 3)
         return biggest_contour, mask
 
     def overlay_mask(self, mask):
@@ -129,7 +138,7 @@ class Processing:
     def circle_contour(image, contour):
         image_with_ellipse = image.copy()
         ellipse = cv2.fitEllipse(contour)
-        cv2.ellipse(image_with_ellipse, ellipse, (100,50), 2, cv2.LINE_AA)
+        cv2.ellipse(image_with_ellipse, ellipse, (100, 50), 2, cv2.LINE_AA)
         return image_with_ellipse
 
     def feature_detect(self, h=2000, report_values=False):
@@ -139,7 +148,7 @@ class Processing:
             print(minVal, maxVal, minLoc, maxLoc)
         surf = cv2.xfeatures2d.SURF_create(h)
         kp, dst = surf.detectAndCompute(self._gray, self._roi_mask)
-        filtered_kp = [x for x in kp if not self._gray[int(x.pt[0]+ 0.5), int(x.pt[1]+ 0.5)] > 200]
+        filtered_kp = [x for x in kp if not self._gray[int(x.pt[0] + 0.5), int(x.pt[1] + 0.5)] > 200]
         self.feature_image = cv2.drawKeypoints(self._image, filtered_kp, self._image)
         return filtered_kp, dst, self.feature_image
 
@@ -169,4 +178,3 @@ class Processing:
             cv2.imshow('Ventricle Edge', blend)
             cv2.waitKey(0)
         return None
-
