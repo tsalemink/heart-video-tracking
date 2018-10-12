@@ -19,6 +19,7 @@ class Processing:
         self._kernel = None
         self._bgr = None
         self.roi = None
+        self._overlay_mask = None
         self.threshold = None
 
     # TEMPORARY ROI SELECTOR METHOD
@@ -106,14 +107,14 @@ class Processing:
         mask_closed = cv2.morphologyEx(self._finalmask, cv2.MORPH_CLOSE, kernel)
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         _, mask = self.find_electrodes(mask_clean)
-        overlay = self.overlay_mask(mask_clean)
+        self._overlay = self.overlay_mask(mask_clean)
         params = self.some_paramerters()
         ver = (cv2.__version__).split('.')
         if int(ver[0]) < 3:
             detector = cv2.SimpleBlobDetector(params)
         else:
             detector = cv2.SimpleBlobDetector_create(params)
-        keypoints = detector.detect(overlay)
+        keypoints = detector.detect(self._overlay)
 
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
@@ -162,19 +163,17 @@ class Processing:
         img = self.image * mask2[:, :, np.newaxis]
         return img
 
-    def detect_ventricle(self, mask, show=False):
-        if self.blur is None:
-            raise Exception("Please create grayscale image using the 'filter_and_threshold' method.")
+    def detect_ventricle(self):
+        if self._overlay is None:
+            raise Exception("No overlay mask found!")
 
-        m = mask
-        masked_image = self.gray * m
+        masked_image = self._overlay
         # filter = cv2.Laplacian(masked_image, cv2.CV_64F)
         ventricle = cv2.Canny(masked_image, 70, 120)
         # ventricle = cv2.Canny(self.gray, 70, 120)
         # masked_image = ventricle * m
-        blend = cv2.addWeighted(self.gray, 0.5, ventricle, 0.5, 0)
+        blend = cv2.addWeighted(self._image, 0.5, ventricle, 0.5, 0)
 
-        if show:
-            cv2.imshow('Ventricle Edge', blend)
-            cv2.waitKey(0)
+        cv2.imshow('Ventricle Edge', blend)
+        cv2.waitKey(0)
         return None
