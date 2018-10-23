@@ -44,10 +44,6 @@ class Processing:
         self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
         if self._blur is not None:
             self._blur = None
-
-        # retval, thresholded = cv2.threshold(self._gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        # cv2.imshow('Thresholded Image', self._gray)
-        # cv2.waitKey(0)
         self._blur = cv2.GaussianBlur(self._gray, (self.threshold, self.threshold), 0)
         return self._gray, self._blur
 
