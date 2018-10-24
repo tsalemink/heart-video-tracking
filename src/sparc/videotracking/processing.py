@@ -20,6 +20,7 @@ class Processing:
         self._bgr = None
         self.roi = None
         self._overlay_mask = None
+        self._overlay = None
         self.threshold = None
 
     # TEMPORARY ROI SELECTOR METHOD
@@ -99,19 +100,24 @@ class Processing:
 
     def draw_electrodes(self, kernel=None):
         self._kernel = 15 if kernel is None else kernel
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
         mask_closed = cv2.morphologyEx(self._finalmask, cv2.MORPH_CLOSE, kernel)
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         _, mask = self.find_electrodes(mask_clean)
         self._overlay = self.overlay_mask(mask_clean)
         params = self.some_paramerters()
+
         ver = (cv2.__version__).split('.')
         if int(ver[0]) < 3:
             detector = cv2.SimpleBlobDetector(params)
         else:
             detector = cv2.SimpleBlobDetector_create(params)
-        keypoints = detector.detect(self._overlay)
 
+        keypoints = detector.detect(self._overlay)
+        if len(keypoints) != 64:
+            print("Did not able to find all the electrodes!")
+            cv2.imshow("overlay mask", self._overlay)
+            k = cv2.waitKey(20) & 0xFF
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         return keypoints, circled
@@ -139,7 +145,6 @@ class Processing:
         return image_with_ellipse
 
     def feature_detect(self, h=2000, report_values=False):
-
         if report_values:
             minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(self._blur)
             print(minVal, maxVal, minLoc, maxLoc)
@@ -163,15 +168,22 @@ class Processing:
         if self._overlay is None:
             raise Exception("No overlay mask found!")
 
-        masked_image = self._overlay
+        gray, blur = self.gray_and_blur(threshold=9)
+
+        # temporary
+        path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
+        next_file_name = 'HeartVideo0005.jpg'
+        next_imfile = os.path.join(path, next_file_name)
+        self.read_image(next_imfile)
+
+        next_gray, next_blur = self.gray_and_blur(threshold=9)
+
+        # masked_image = self._overlay
         # filter = cv2.Laplacian(masked_image, cv2.CV_64F)
-        ventricle = cv2.Canny(masked_image, 70, 120)
+        # ventricle = cv2.Canny(masked_image, 70, 120)
         # ventricle = cv2.Canny(self.gray, 70, 120)
         # masked_image = ventricle * m
-        blend = cv2.addWeighted(self._image, 0.5, ventricle, 0.5, 0)
-
-        cv2.imshow('Ventricle Edge', blend)
-        cv2.waitKey(0)
+        # blend = cv2.addWeighted(self._image, 0.5, ventricle, 0.5, 0)
         return None
 
 
@@ -186,6 +198,19 @@ def draw_flow(img, flow, step=16):
     for (x1, y1), (x2, y2) in lines:
         cv2.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
     return vis
+
+
+def draw_hsv(flow):
+    h, w = flow.shape[:2]
+    fx, fy = flow[:,:,0], flow[:,:,1]
+    ang = np.arctan2(fy, fx) + np.pi
+    v = np.sqrt(fx*fx+fy*fy)
+    hsv = np.zeros((h, w, 3), np.uint8)
+    hsv[...,0] = ang*(180/np.pi/2)
+    hsv[...,1] = 255
+    hsv[...,2] = np.minimum(v*4, 255)
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    return bgr
 
 
 if __name__ == '__main__':
@@ -209,7 +234,7 @@ if __name__ == '__main__':
                 # hsv[..., 1] = 255
             else:
                 if PS is not None: del PS
-                file_name = 'HeartVideo0040.jpg'
+                file_name = 'HeartVideo0005.jpg'
                 # file_name = i
                 PS = Processing()
                 next_imfile = os.path.join(path, file_name)
@@ -222,7 +247,9 @@ if __name__ == '__main__':
 
                 frameDelta = cv2.absdiff(gray, next_gray)
                 frameList.append(flow)
-                thresh = cv2.threshold(frameDelta, 19, 255, cv2.THRESH_BINARY)[1]
+                thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
+                ret2, th2 = cv2.threshold(frameDelta, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
                 # edge_OF = cv2.Canny(thresh, 100, 200)
                 # ret, labels = cv2.connectedComponents(thresh)
                 # label_hue = np.uint8(179 * labels / np.max(labels))
@@ -241,26 +268,46 @@ if __name__ == '__main__':
                 # vis = draw_flow(gray, flow)
                 # hsv = draw_hsv(flow)
 
-                kernel = np.ones((5, 5), np.uint8)
-                img_erosion = cv2.erode(np.uint8(thresh), kernel, iterations=1)
-                img_dilation = cv2.dilate(img_erosion, kernel, iterations=1)
+                kernel = np.ones((9, 9), np.uint8)
+                img_dilation = cv2.dilate(np.uint8(th2), kernel, iterations=1)
+                kernel_close = np.ones((19, 19), np.uint8)
+                img_closed = cv2.morphologyEx(img_dilation, cv2.MORPH_CLOSE, kernel_close)
+                kernel_open = np.ones((13, 13), np.uint8)
+                mask_clean = cv2.morphologyEx(img_closed, cv2.MORPH_OPEN, kernel)
+                kernel_erode = np.ones((5, 5), np.uint8)
+                img_erosion = cv2.erode(img_dilation, kernel_erode, iterations=1)
 
-                nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(img_dilation, connectivity=8)
+                nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(img_erosion, connectivity=8)
                 sizes = stats[1:, -1]; nb_components = nb_components - 1
 
-                min_size = 2500
-                t2 = np.zeros(thresh.shape)
+                min_size, max_size = 200, 15000
+                t2 = np.zeros(th2.shape)
                 for i in range(0, nb_components):
-                    if sizes[i] >= min_size:
+                    if min_size <= sizes[i] <= max_size:
                         t2[output == i + 1] = 255
 
-                invert = cv2.bitwise_not(np.uint8(t2))
-                kernel_1 = np.ones((9, 9), np.uint8)
-                dil = cv2.dilate(np.uint8(t2), kernel_1, iterations=1)
-                erode = cv2.erode(np.uint8(dil), kernel_1, iterations=1)
-                edge_OF = cv2.Canny(np.uint8(erode), 100, 200)
-                cv2.imshow("edges", edge_OF)
+                ret, labels = cv2.connectedComponents(np.uint8(t2))
+                label_hue = np.uint8(179 * labels / np.max(labels))
+                blank_ch = 255 * np.ones_like(label_hue)
+                labeled_img = cv2.merge([label_hue, blank_ch, blank_ch])
+                labeled_img = cv2.cvtColor(labeled_img, cv2.COLOR_HSV2BGR)
+                labeled_img[label_hue == 0] = 0
 
+                kernel_1 = np.ones((7, 7), np.uint8)
+                t2_dilate = cv2.dilate(np.uint8(t2), kernel_1, iterations=1)
+
+                nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(t2_dilate, connectivity=8)
+                sizes = stats[1:, -1]; nb_components = nb_components - 1
+
+                min_size = 2000
+                t2_1 = np.zeros(t2_dilate.shape)
+                for i in range(0, nb_components):
+                    if sizes[i] >= min_size:
+                        t2_1[output == i + 1] = 255
+
+                # edge_OF = cv2.Canny(np.uint8(np.uint8(img_erosion)), 100, 200)
+
+                cv2.imshow("Delta", t2)
                 # cv2.imwrite(os.path.join(output_path, 'flow', i), vis)
                 # cv2.imshow("Frame Delta", frameDelta)
                 imageList.append(gray)
