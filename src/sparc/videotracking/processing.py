@@ -168,16 +168,6 @@ class Processing:
         if self._overlay is None:
             raise Exception("No overlay mask found!")
 
-        gray, blur = self.gray_and_blur(threshold=9)
-
-        # temporary
-        path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
-        next_file_name = 'HeartVideo0005.jpg'
-        next_imfile = os.path.join(path, next_file_name)
-        self.read_image(next_imfile)
-
-        next_gray, next_blur = self.gray_and_blur(threshold=9)
-
         # masked_image = self._overlay
         # filter = cv2.Laplacian(masked_image, cv2.CV_64F)
         # ventricle = cv2.Canny(masked_image, 70, 120)
@@ -216,117 +206,76 @@ def draw_hsv(flow):
 if __name__ == '__main__':
     path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
     output_path = r'/hpc/mosa004/Sparc/Heart/output'
-    # path = r'/hpc/mosa004/Sparc/Heart/HeartVideoFrames'
-    animation = True
-    count = 1
-    frameList = list()
-    imageList = list()
-    while animation:
-        for i in sorted(os.listdir(path)):
-            if count == 1:
-                file_name = i
-                PS = Processing()
-                imfile = os.path.join(path, file_name)
-                PS.read_image(imfile)
-                gray, blur = PS.gray_and_blur(threshold=9)
-                edges = cv2.Canny(blur, 50, 100)
-                # hsv = np.zeros_like(gray)
-                # hsv[..., 1] = 255
-            else:
-                if PS is not None: del PS
-                file_name = 'HeartVideo0005.jpg'
-                # file_name = i
-                PS = Processing()
-                next_imfile = os.path.join(path, file_name)
-                PS.read_image(next_imfile)
-                next_gray, next_blur = PS.gray_and_blur(threshold=9)
-                next_edges = cv2.Canny(next_blur, 50, 100)
 
-                flow = cv2.calcOpticalFlowFarneback(gray, next_gray, None, 0.5, 3, 40, 11, 7, 1.5, 0)
-                mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    PS = Processing()
+    im1 = os.path.join(path, 'HeartVideo0001.jpg')
+    PS.read_image(im1)
+    gray, blur = PS.gray_and_blur(threshold=9)
 
-                frameDelta = cv2.absdiff(gray, next_gray)
-                frameList.append(flow)
-                thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
-                ret2, th2 = cv2.threshold(frameDelta, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    del PS
+    PS = Processing()
+    im2 = os.path.join(path, 'HeartVideo0003.jpg')
+    PS.read_image(im2)
+    next_gray, next_blur = PS.gray_and_blur(threshold=9)
 
-                # edge_OF = cv2.Canny(thresh, 100, 200)
-                # ret, labels = cv2.connectedComponents(thresh)
-                # label_hue = np.uint8(179 * labels / np.max(labels))
-                # blank_ch = 255 * np.ones_like(label_hue)
-                # labeled_img = cv2.merge([label_hue, blank_ch, blank_ch])
-                # labeled_img = cv2.cvtColor(labeled_img, cv2.COLOR_HSV2BGR)
-                # labeled_img[label_hue == 0] = 0
-                #
-                # kernel = np.ones((9, 9), np.uint8)
-                # img_erosion = cv2.erode(labeled_img, kernel, iterations=1)
-                # img_dilation = cv2.dilate(img_erosion, kernel, iterations=1)
-                #
-                # kernel_2 = np.ones((11, 11), np.uint8)
-                # img_erosion = cv2.erode(img_dilation, kernel_2, iterations=1)
+    flow = cv2.calcOpticalFlowFarneback(gray, next_gray, None, 0.5, 3, 40, 11, 7, 1.5, 0)
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
 
-                # vis = draw_flow(gray, flow)
-                # hsv = draw_hsv(flow)
+    ret2, th2 = cv2.threshold(np.uint8(mag), 100, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-                kernel = np.ones((9, 9), np.uint8)
-                img_dilation = cv2.dilate(np.uint8(th2), kernel, iterations=1)
-                kernel_close = np.ones((19, 19), np.uint8)
-                img_closed = cv2.morphologyEx(img_dilation, cv2.MORPH_CLOSE, kernel_close)
-                kernel_open = np.ones((13, 13), np.uint8)
-                mask_clean = cv2.morphologyEx(img_closed, cv2.MORPH_OPEN, kernel)
-                kernel_erode = np.ones((5, 5), np.uint8)
-                img_erosion = cv2.erode(img_dilation, kernel_erode, iterations=1)
+    kernel_close = np.ones((5, 5), np.uint8)
+    img_closed = cv2.morphologyEx(np.uint8(th2), cv2.MORPH_CLOSE, kernel_close)
+    kernel_open = np.ones((13, 13), np.uint8)
+    mask_clean = cv2.morphologyEx(img_closed, cv2.MORPH_OPEN, kernel_open)
+    kernel_erode = np.ones((15, 15), np.uint8)
+    img_erosion = cv2.erode(mask_clean, kernel_erode, iterations=1)
 
-                nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(img_erosion, connectivity=8)
-                sizes = stats[1:, -1]; nb_components = nb_components - 1
+    nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(img_erosion, connectivity=8)
+    sizes = stats[1:, -1]
+    nb_components = nb_components - 1
+    min_size = 5000
+    t2 = np.zeros(th2.shape)
+    for i in range(0, nb_components):
+        if sizes[i] >= min_size:
+            t2[output == i + 1] = 255
 
-                min_size, max_size = 200, 15000
-                t2 = np.zeros(th2.shape)
-                for i in range(0, nb_components):
-                    if min_size <= sizes[i] <= max_size:
-                        t2[output == i + 1] = 255
+    kernel_1 = np.ones((15, 15), np.uint8)
+    t2_dilate = cv2.dilate(np.uint8(t2), kernel_1, iterations=1)
 
-                ret, labels = cv2.connectedComponents(np.uint8(t2))
-                label_hue = np.uint8(179 * labels / np.max(labels))
-                blank_ch = 255 * np.ones_like(label_hue)
-                labeled_img = cv2.merge([label_hue, blank_ch, blank_ch])
-                labeled_img = cv2.cvtColor(labeled_img, cv2.COLOR_HSV2BGR)
-                labeled_img[label_hue == 0] = 0
+    kernel_close_1 = np.ones((65, 65), np.uint8)
+    img_closed_1 = cv2.morphologyEx(np.uint8(t2_dilate), cv2.MORPH_CLOSE, kernel_close_1)
 
-                kernel_1 = np.ones((7, 7), np.uint8)
-                t2_dilate = cv2.dilate(np.uint8(t2), kernel_1, iterations=1)
+    blur = cv2.bilateralFilter(img_closed_1, 19, 75, 75)
+    edge_OF = cv2.Canny(blur, 100, 200)
+    blend = cv2.addWeighted(gray, 0.5, edge_OF, 0.5, 0)
 
-                nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(t2_dilate, connectivity=8)
-                sizes = stats[1:, -1]; nb_components = nb_components - 1
+    # cv2.imshow("mag", mag)
+    # cv2.imshow("th2", th2)
+    # cv2.imshow("img_closed", img_closed)
+    # cv2.imshow("mask_clean", mask_clean)
+    # cv2.imshow("img_erosion", img_erosion)
+    # cv2.imshow("t2", t2)
+    # cv2.imshow("t2_dilate", t2_dilate)
+    # cv2.imshow("img_closed_1", img_closed_1)
+    # cv2.imshow("blur", blur)
+    # cv2.imshow("edge_OF", edge_OF)
+    # cv2.imshow("blend", blend)
+    # k = cv2.waitKey(20) & 0xFF
 
-                min_size = 2000
-                t2_1 = np.zeros(t2_dilate.shape)
-                for i in range(0, nb_components):
-                    if sizes[i] >= min_size:
-                        t2_1[output == i + 1] = 255
+    save_path = os.path.join(output_path, "segmentation")
+    cv2.imwrite(os.path.join(save_path, "gray.jpg"), next_gray)
+    cv2.imwrite(os.path.join(save_path, "th2.jpg"), th2)
+    cv2.imwrite(os.path.join(save_path, "img_closed.jpg"), img_closed)
+    cv2.imwrite(os.path.join(save_path, "mask_clean.jpg"), mask_clean)
+    cv2.imwrite(os.path.join(save_path, "img_erosion.jpg"), img_erosion)
+    cv2.imwrite(os.path.join(save_path, "t2.jpg"), t2)
+    cv2.imwrite(os.path.join(save_path, "t2_dilate.jpg"), t2_dilate)
+    cv2.imwrite(os.path.join(save_path, "img_closed_1.jpg"), img_closed_1)
+    cv2.imwrite(os.path.join(save_path, "blur.jpg"), blur)
+    cv2.imwrite(os.path.join(save_path, "edge_OF.jpg"), edge_OF)
+    cv2.imwrite(os.path.join(save_path, "blend.jpg"), blend)
 
-                # edge_OF = cv2.Canny(np.uint8(np.uint8(img_erosion)), 100, 200)
+    print("Done!")
 
-                cv2.imshow("Delta", t2)
-                # cv2.imwrite(os.path.join(output_path, 'flow', i), vis)
-                # cv2.imshow("Frame Delta", frameDelta)
-                imageList.append(gray)
-                gray = next_gray
 
-            k = cv2.waitKey(20) & 0xFF
-            count += 1
-            print("Frame : %s" % i)
-            # if k == 27 or count == 108:
-            if count == 108:
-                animation = False
-                # cv2.destroyAllWindows()
-                break
 
-    a = np.asarray(frameList, dtype=np.uint8)
-    flow_avg = np.mean(a, axis=0)
-
-    b = np.asarray(imageList, dtype=np.uint8)
-    image_avg = np.mean(b, axis=0)
-
-    # vis = draw_flow(image_avg, flow_avg)
-    bb = cv2.bitwise_not(b)
