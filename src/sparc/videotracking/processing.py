@@ -82,12 +82,14 @@ class Processing:
         params.maxArea = 1000
         params.minArea = 20
         params.filterByCircularity = True
-        params.minCircularity = 0.3
+        params.minCircularity = 0.45
         params.filterByConvexity = False
         # params.minConvexity = 0.45
         params.filterByInertia = True
-        params.minInertiaRatio = 0.2
+        params.minInertiaRatio = 0.1
         params.maxInertiaRatio = 1
+        params.filterByColor = True
+        params.blobColor = 0
         return params
 
     def detect_electrode(self):
