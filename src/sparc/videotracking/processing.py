@@ -79,11 +79,12 @@ class Processing:
         params.minThreshold = 90;
         params.maxThreshold = 200;
         params.filterByArea = True
-        params.maxArea = 200
+        params.maxArea = 1000
+        params.minArea = 20
         params.filterByCircularity = True
         params.minCircularity = 0.3
-        params.filterByConvexity = True
-        params.minConvexity = 0.45
+        params.filterByConvexity = False
+        # params.minConvexity = 0.45
         params.filterByInertia = True
         params.minInertiaRatio = 0.2
         params.maxInertiaRatio = 1
@@ -105,6 +106,7 @@ class Processing:
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         _, mask = self.find_electrodes(mask_clean)
         self._overlay = self.overlay_mask(mask_clean)
+
         params = self.some_paramerters()
 
         ver = (cv2.__version__).split('.')
@@ -114,13 +116,26 @@ class Processing:
             detector = cv2.SimpleBlobDetector_create(params)
 
         keypoints = detector.detect(self._overlay)
+
         if len(keypoints) != 64:
             print("Did not able to find all the electrodes!")
-            cv2.imshow("overlay mask", self._overlay)
-            k = cv2.waitKey(20) & 0xFF
+            tempx, tempy = list(), list()
+            for point in keypoints:
+                tempx.append([point.pt[0]])
+                tempy.append([point.pt[1]])
+            tempx, tempy = sorted(tempx), sorted(tempy)
+            xdiff, ydiff= list(), list()
+            for i in range(len(tempx)):
+                if i == len(tempx) - 1:
+                    break
+                else:
+                    xdiff.append(abs(tempx[i][0] - tempx[i+1][0]))
+                    ydiff.append(abs(tempy[i][0] - tempy[i+1][0]))
+        
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        return keypoints, circled
+
+        return keypoints, circled, (xdiff, ydiff)
 
     @staticmethod
     def find_electrodes(input_mask):
@@ -136,6 +151,12 @@ class Processing:
         rgb_mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
         img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
         return img
+
+    def do_kdtree(self, combined_x_y_arrays, points):
+        import scipy.spatial as ss
+        mytree = ss.cKDTree(combined_x_y_arrays)
+        dist, indexes = mytree.query(points)
+        return indexes
 
     @staticmethod
     def circle_contour(image, contour):
