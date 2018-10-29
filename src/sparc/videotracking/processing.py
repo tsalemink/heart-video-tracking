@@ -102,6 +102,7 @@ class Processing:
         return self._finalmask
 
     def draw_electrodes(self, kernel=None):
+        from matplotlib import pyplot as plt
         self._kernel = 15 if kernel is None else kernel
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
         mask_closed = cv2.morphologyEx(self._finalmask, cv2.MORPH_CLOSE, kernel)
@@ -117,27 +118,18 @@ class Processing:
         else:
             detector = cv2.SimpleBlobDetector_create(params)
 
-        keypoints = detector.detect(self._overlay)
+        cv2.circle(self._overlay, (mask.shape[0], mask.shape[1]), 280, 1, thickness=-1)
+        masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
+        keypoints = detector.detect(masked_data)
+        image_points = np.asarray([key_point.pt for key_point in keypoints])
 
-        if len(keypoints) != 64:
-            print("Did not able to find all the electrodes!")
-            tempx, tempy = list(), list()
-            for point in keypoints:
-                tempx.append([point.pt[0]])
-                tempy.append([point.pt[1]])
-            tempx, tempy = sorted(tempx), sorted(tempy)
-            xdiff, ydiff= list(), list()
-            for i in range(len(tempx)):
-                if i == len(tempx) - 1:
-                    break
-                else:
-                    xdiff.append(abs(tempx[i][0] - tempx[i+1][0]))
-                    ydiff.append(abs(tempy[i][0] - tempy[i+1][0]))
-        
+        # if len(keypoints) != 64:
+        #     template = cv2.imread('/hpc/mosa004/Sparc/Heart/template.jpg', 0)
+
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-        return keypoints, circled, (xdiff, ydiff)
+        return keypoints, circled
 
     @staticmethod
     def find_electrodes(input_mask):
@@ -154,11 +146,45 @@ class Processing:
         img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
         return img
 
-    def do_kdtree(self, combined_x_y_arrays, points):
-        import scipy.spatial as ss
-        mytree = ss.cKDTree(combined_x_y_arrays)
-        dist, indexes = mytree.query(points)
-        return indexes
+    @staticmethod
+    def make_8by8_grid():
+        x = np.linspace(-4, 4, 8)
+        y = np.linspace(-4, 4, 8)
+        xx, yy = np.meshgrid(x, y, indexing='ij')
+        return xx, yy
+    
+
+    @staticmethod
+    def sliding_window(arr, window_size):
+        from numpy.lib.stride_tricks import as_strided
+        """ Construct a sliding window view of the array"""
+        arr = np.asarray(arr)
+        window_size = int(window_size)
+        if arr.ndim != 2:
+            raise ValueError("need 2-D input")
+        if not (window_size > 0):
+            raise ValueError("need a positive window size")
+        shape = (arr.shape[0] - window_size + 1, arr.shape[1] - window_size + 1, window_size, window_size)
+        if shape[0] <= 0:
+            shape = (1, shape[1], arr.shape[0], shape[3])
+        if shape[1] <= 0:
+            shape = (shape[0], 1, shape[2], arr.shape[1])
+        strides = (arr.shape[1] * arr.itemsize, arr.itemsize, arr.shape[1] * arr.itemsize, arr.itemsize)
+        return as_strided(arr, shape=shape, strides=strides)
+
+    @staticmethod
+    def get_neighbours(arr, i, j, d):
+        """Return d-th neighbors of cell (i, j)"""
+        w = Processing.sliding_window(arr, 2 * d + 1)
+
+        ix = np.clip(i - d, 0, w.shape[0] - 1)
+        jx = np.clip(j - d, 0, w.shape[1] - 1)
+
+        i0 = max(0, i - d - ix)
+        j0 = max(0, j - d - jx)
+        i1 = w.shape[2] - max(0, d - i + ix)
+        j1 = w.shape[3] - max(0, d - j + jx)
+        return w[ix, jx][i0:i1, j0:j1].ravel()
 
     @staticmethod
     def circle_contour(image, contour):
