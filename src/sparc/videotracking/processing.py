@@ -11,11 +11,6 @@ from scipy import optimize
 from scipy.linalg import lstsq
 import cv2
 import imutils
-sys.path.append(
-    '/hpc/mosa004/mapclient-plugins/mapclientplugins.parametricfittingstep/mapclientplugins/parametricfittingstep/core')
-import RigidFitting
-reload(RigidFitting)
-from RigidFitting import RigidFitting
 # from matplotlib import pyplot as plt
 
 
@@ -124,6 +119,8 @@ class Processing:
 
     def draw_electrodes(self, kernel=None):
         from matplotlib import pyplot as plt
+        from functools import partial
+
         self._kernel = 15 if kernel is None else kernel
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
         mask_closed = cv2.morphologyEx(self._finalmask, cv2.MORPH_CLOSE, kernel)
@@ -141,11 +138,83 @@ class Processing:
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
         keypoints = detector.detect(masked_data)
         image_points = np.asarray([key_point.pt for key_point in keypoints])
+
+        full_detected_points = self.optimization(self._grid, image_points)
+        # x, y = [i[0] for i in image_po ints], [i[1] for i in image_points]
+
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-        return image_points, circled
+        return full_detected_points, circled
 
+
+    def optimization(self, X, Y):
+        """
+        This optimization was tested and performed slower than the one currently used in draw_electrodes().
+
+        :param X:
+        :param Y:
+        :return:
+        """
+        D = X
+        T = Y
+        t0 = scipy.array([0.0, 0.0, 0.0, 1.0])
+        TTree = cKDTree(T)
+        D = scipy.array(D)
+
+        def obj(t):
+            transformedData = self.affine_about_CoI(X, t)
+            dataTree = cKDTree(transformedData)
+            dD, di = dataTree.query(Y)
+            dT, ti = TTree.query(transformedData)
+            return (dD * dD).mean()
+
+        def index(t):
+            D1 = cKDTree(D)
+            T1 = cKDTree(T)
+            _, indexes1 = D1.query(X)
+            _, indexes2 = T1.query(Y)
+            return indexes1, indexes2
+
+        initialRMSE = scipy.sqrt(obj(t0).mean())
+        minima = []
+        reses = []
+        for rot in np.linspace(0, 360, 1000):
+            t0 = scipy.array([0.0, 0.0, np.deg2rad(rot), 1.0])
+            res = scipy.optimize.minimize(obj, t0, method='Nelder-Mead',
+                                          options={'disp': False, 'xatol': 1e-6, 'fatol': 1e-6, 'maxiter': 1e7})
+            finalRMSE = scipy.sqrt(obj(res.x).mean())
+            print(finalRMSE)
+            minima.append(finalRMSE)
+            reses.append(res.x)
+            tOpt = res.x
+
+        tOpt = reses[minima.index(min(minima))]
+        optimized_points = self.affine_about_CoI(D, tOpt)
+        return optimized_points
+
+
+    def affine_about_CoI(self, x, t):
+        self._image_size = self.get_image_size()
+        xO = x - array(self._image_size) / 2
+        xOT = Processing.affine(xO, t)
+        return xOT + array(self._image_size) / 2
+
+    @staticmethod
+    def affine(x, t):
+        X = scipy.vstack((x.T, scipy.ones(x.shape[0])))
+        T = scipy.array([
+                            [1.0, 0.0, t[0]],
+                            [0.0, 1.0, t[1]],
+                            [1.0, 1.0, 1.0]
+                        ])
+        Rx = scipy.array([
+                            [scipy.cos(t[2]), -scipy.sin(t[2])],
+                            [scipy.sin(t[2]), scipy.cos(t[2])]
+                        ])
+        T[:2, :2] = Rx
+        temp = scipy.dot(T, X)[:2, :].T
+        return scipy.multiply(temp, t[3])
 
     @staticmethod
     def find_electrodes(input_mask):
