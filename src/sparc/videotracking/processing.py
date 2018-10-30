@@ -3,19 +3,12 @@ from __future__ import division
 from numpy import *
 import numpy as np
 import os, sys
-import scipy
-from scipy.spatial import distance as dist
-from scipy.spatial import cKDTree
-from scipy.optimize import leastsq, fmin
-from scipy import optimize
-from scipy.linalg import lstsq
 import cv2
+from optimization import Minimize
 import imutils
-# from matplotlib import pyplot as plt
 
 
 class Processing:
-
     def __init__(self):
         self._image = None
         self._gray = None
@@ -32,7 +25,9 @@ class Processing:
         self._overlay = None
         self.threshold = None
         self._image_size = None
+        self._detected_electrodes = None
         self._grid = None
+        self._full_detected_electrodes = None
 
     # TEMPORARY ROI SELECTOR METHOD
     def select_roi(self):
@@ -137,18 +132,45 @@ class Processing:
         cv2.circle(self._overlay, (mask.shape[0], mask.shape[1]), 280, 1, thickness=-1)
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
         keypoints = detector.detect(masked_data)
-        image_points = np.asarray([key_point.pt for key_point in keypoints])
-
-        full_detected_points = self.optimization(self._grid, image_points)
-        # x, y = [i[0] for i in image_po ints], [i[1] for i in image_points]
-
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        self._detected_electrodes = np.asarray([key_point.pt for key_point in keypoints])
 
-        return full_detected_points, circled
+        self._full_detected_electrodes = self.optimize(visualize=True)
+        # self._full_detected_electrodes = self.optimization(self._grid, self._detected_electrodes)
+        return self._full_detected_electrodes, circled
 
+    def optimize(self, visualize=False, callback=None):
+
+        def visualization(iteration, error, X, Y, ax):
+            plt.cla()
+            ax.scatter(X[:, 0], X[:, 1], color='red')
+            ax.scatter(Y[:, 0], Y[:, 1], color='blue')
+            plt.draw()
+            print("iteration %d, error %.10f" % (iteration, error))
+            plt.pause(0.001)
+
+        if visualize:
+            from matplotlib import pyplot as plt
+            from functools import partial
+            fig = plt.figure()
+            fig.add_axes([0, 0, 1, 1])
+            callback = partial(visualization, ax=fig.axes[0])
+
+        self._grid = np.asarray(self.generate_grid())
+        reg = Minimize(self._detected_electrodes, self._grid, max_iter=10000, tolerance=0.000001)
+        reg.tolerance = 1e-9
+        reg.register(callback)
+        return reg.TY
 
     def optimization(self, X, Y):
+        import scipy
+        from scipy.spatial import distance as dist
+        from scipy.spatial import cKDTree
+        from scipy.optimize import leastsq, fmin
+        from scipy import optimize
+        from scipy.linalg import lstsq
+
         """
         This optimization was tested and performed slower than the one currently used in draw_electrodes().
 
@@ -187,12 +209,10 @@ class Processing:
             print(finalRMSE)
             minima.append(finalRMSE)
             reses.append(res.x)
-            tOpt = res.x
 
         tOpt = reses[minima.index(min(minima))]
         optimized_points = self.affine_about_CoI(D, tOpt)
         return optimized_points
-
 
     def affine_about_CoI(self, x, t):
         self._image_size = self.get_image_size()
@@ -255,9 +275,6 @@ class Processing:
         number_on_side = 8
         ns = number_on_side
         ns1 = number_on_side - 1
-
-        plane_normal_offset = 0
-
         grid_coord = []
         for i in range(number_on_side):
             for j in range(number_on_side):
