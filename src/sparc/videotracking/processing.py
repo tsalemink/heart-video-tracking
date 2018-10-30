@@ -1,7 +1,21 @@
+from __future__ import division
+
+from numpy import *
 import numpy as np
+import os, sys
+import scipy
+from scipy.spatial import distance as dist
+from scipy.spatial import cKDTree
+from scipy.optimize import leastsq, fmin
+from scipy import optimize
+from scipy.linalg import lstsq
 import cv2
-import os
 import imutils
+sys.path.append(
+    '/hpc/mosa004/mapclient-plugins/mapclientplugins.parametricfittingstep/mapclientplugins/parametricfittingstep/core')
+import RigidFitting
+reload(RigidFitting)
+from RigidFitting import RigidFitting
 # from matplotlib import pyplot as plt
 
 
@@ -22,6 +36,8 @@ class Processing:
         self._overlay_mask = None
         self._overlay = None
         self.threshold = None
+        self._image_size = None
+        self._grid = None
 
     # TEMPORARY ROI SELECTOR METHOD
     def select_roi(self):
@@ -31,6 +47,11 @@ class Processing:
         self.roi = cv2.selectROI(self._image)
         cv2.destroyAllWindows()
         return self.roi
+
+    def get_image_size(self):
+        if self._image is None:
+            raise Exception("No image found! Please use read_image() method to load your image first.")
+        return self._image.shape[:2]
 
     def get_filtered_image(self):
         return self._blur_hsv, self._gray
@@ -111,25 +132,20 @@ class Processing:
         self._overlay = self.overlay_mask(mask_clean)
 
         params = self.some_paramerters()
-
         ver = (cv2.__version__).split('.')
         if int(ver[0]) < 3:
             detector = cv2.SimpleBlobDetector(params)
         else:
             detector = cv2.SimpleBlobDetector_create(params)
-
         cv2.circle(self._overlay, (mask.shape[0], mask.shape[1]), 280, 1, thickness=-1)
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
         keypoints = detector.detect(masked_data)
         image_points = np.asarray([key_point.pt for key_point in keypoints])
-
-        # if len(keypoints) != 64:
-        #     template = cv2.imread('/hpc/mosa004/Sparc/Heart/template.jpg', 0)
-
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-        return keypoints, circled
+        return image_points, circled
+
 
     @staticmethod
     def find_electrodes(input_mask):
@@ -152,7 +168,40 @@ class Processing:
         y = np.linspace(-4, 4, 8)
         xx, yy = np.meshgrid(x, y, indexing='ij')
         return xx, yy
-    
+
+    @staticmethod
+    def generate_grid():
+        pointsList = np.array([
+                            [419.28543, 293.20193],
+                            [649.6535, 188.68832],
+                            [732.70465, 448.59],
+                            [509.44885, 545.94147]
+                            ], dtype=np.float32).tolist()
+
+        p1 = pointsList[0]
+        p2 = pointsList[1]
+        p3 = pointsList[2]
+        p4 = pointsList[3]
+
+        number_on_side = 8
+        ns = number_on_side
+        ns1 = number_on_side - 1
+
+        plane_normal_offset = 0
+
+        grid_coord = []
+        for i in range(number_on_side):
+            for j in range(number_on_side):
+                w1 = i * j / (ns1 ** 2)  # top left point
+                w2 = (j / ns1) * (ns1 - i) / ns1  # top right point
+                w4 = (i / ns1) * (ns1 - j) / ns1  # The 'bottom left' point, p4
+                w3 = ((ns1 - i) * (ns1 - j)) / (ns1 ** 2)  # The diagonal point, p3
+
+                x = p4[0] * w1 + p3[0] * w2 + p2[0] * w3 + p1[0] * w4
+                y = p4[1] * w1 + p3[1] * w2 + p2[1] * w3 + p1[1] * w4
+
+                grid_coord.append([x, y])
+        return grid_coord
 
     @staticmethod
     def sliding_window(arr, window_size):
@@ -213,18 +262,6 @@ class Processing:
         img = self.image * mask2[:, :, np.newaxis]
         return img
 
-    def detect_ventricle(self):
-        if self._overlay is None:
-            raise Exception("No overlay mask found!")
-
-        # masked_image = self._overlay
-        # filter = cv2.Laplacian(masked_image, cv2.CV_64F)
-        # ventricle = cv2.Canny(masked_image, 70, 120)
-        # ventricle = cv2.Canny(self.gray, 70, 120)
-        # masked_image = ventricle * m
-        # blend = cv2.addWeighted(self._image, 0.5, ventricle, 0.5, 0)
-        return None
-
 
 def draw_flow(img, flow, step=16):
     h, w = img.shape[:2]
@@ -253,6 +290,9 @@ def draw_hsv(flow):
 
 
 if __name__ == '__main__':
+    ps = Processing()
+    ps.generateGridPoints4()
+
     path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
     output_path = r'/hpc/mosa004/Sparc/Heart/output'
 
