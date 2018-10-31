@@ -134,9 +134,17 @@ class Processing:
         keypoints = detector.detect(masked_data)
         circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
         self._detected_electrodes = np.asarray([key_point.pt for key_point in keypoints])
+        detected_electrode_array_size = len(self._detected_electrodes)
 
         self._full_detected_electrodes = self.optimize(visualize=True)
+
+        self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:,0])]
+        self._full_detected_electrodes = self._full_detected_electrodes[np.argsort(self._full_detected_electrodes[:,0])]
+
+        self._full_detected_electrodes[:detected_electrode_array_size] = self._detected_electrodes
+
         # self._full_detected_electrodes = self.optimization(self._grid, self._detected_electrodes)
         return self._full_detected_electrodes, circled
 
@@ -327,6 +335,15 @@ class Processing:
         ellipse = cv2.fitEllipse(contour)
         cv2.ellipse(image_with_ellipse, ellipse, (100, 50), 2, cv2.LINE_AA)
         return image_with_ellipse
+
+    def get_two_images(self):
+        """
+        Temporarily return two hard-coded images
+        :return:
+        """
+        path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
+        self.read_image(os.path.join(path, 'HeartVideo0001.jpg'))
+        gray_1, blur_1 = self.gray_and_blur(threshold=9)
 
     def feature_detect(self, h=2000, report_values=False):
         if report_values:
