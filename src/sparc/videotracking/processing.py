@@ -5,6 +5,7 @@ import numpy as np
 import os, sys
 import cv2
 from optimization import Minimize
+import scipy.interpolate as interpolate
 import imutils
 
 
@@ -112,6 +113,21 @@ class Processing:
         self._finalmask = self._electrode_mask + self._roi_mask
         return self._finalmask
 
+    @staticmethod
+    def find_electrodes(input_mask):
+        input_mask = input_mask.copy()
+        _, contours, hierarchy = cv2.findContours(input_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        contour_sizes = [(cv2.contourArea(contour), contour) for contour in contours]
+        biggest_contour = max(contour_sizes, key=lambda x: x[0])[1]
+        mask = np.zeros(input_mask.shape, np.uint8)
+        cv2.drawContours(mask, [biggest_contour], -1, (0, 255, 0), 3)
+        return biggest_contour, mask
+
+    def overlay_mask(self, mask):
+        rgb_mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+        img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
+        return img
+
     def draw_electrodes(self, kernel=None):
         from matplotlib import pyplot as plt
         from functools import partial
@@ -140,10 +156,16 @@ class Processing:
 
         self._full_detected_electrodes = self.optimize(visualize=True)
 
-        self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:,0])]
-        self._full_detected_electrodes = self._full_detected_electrodes[np.argsort(self._full_detected_electrodes[:,0])]
+        self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:, 0])]
+        self._full_detected_electrodes = self._full_detected_electrodes[np.argsort(self._full_detected_electrodes[:, 0])]
 
-        self._full_detected_electrodes[:detected_electrode_array_size] = self._detected_electrodes
+        # xdim_mean = np.mean(self._full_detected_electrodes, axis=0)[0]
+        # xdim_std = np.std(self._full_detected_electrodes, axis=0)[0]
+        # for i in range(len(self._full_detected_electrodes)):
+        #     if self._full_detected_electrodes[i][0] < xdim_mean - xdim_std:
+        #         self._full_detected_electrodes[i] = self._detected_electrodes[i]
+
+        # self._full_detected_electrodes[:detected_electrode_array_size] = self._detected_electrodes
 
         # self._full_detected_electrodes = self.optimization(self._grid, self._detected_electrodes)
         return self._full_detected_electrodes, circled
@@ -165,19 +187,27 @@ class Processing:
             fig.add_axes([0, 0, 1, 1])
             callback = partial(visualization, ax=fig.axes[0])
 
-        self._grid = np.asarray(self.generate_grid())
-        reg = Minimize(self._detected_electrodes, self._grid, max_iter=10000, tolerance=0.000001)
-        reg.tolerance = 1e-9
+        self._grid, fixed_points = self.generate_grid()
+        temp = list()
+        for point in range(len(self._grid)):
+            if self._grid[point] in fixed_points:
+                print("here")
+                continue
+            temp.append(self._grid[point])
+
+        temp = np.asarray(temp)
+        reg = Minimize(self._detected_electrodes, temp, max_iter=100000, tolerance=1e-11)
+        reg.tolerance = 1e-13
         reg.register(callback)
-        return reg.TY
+
+        full_electrodes = np.concatenate((reg.TY, fixed_points))
+
+        return full_electrodes
 
     def optimization(self, X, Y):
         import scipy
-        from scipy.spatial import distance as dist
         from scipy.spatial import cKDTree
-        from scipy.optimize import leastsq, fmin
         from scipy import optimize
-        from scipy.linalg import lstsq
 
         """
         This optimization was tested and performed slower than the one currently used in draw_electrodes().
@@ -245,40 +275,18 @@ class Processing:
         return scipy.multiply(temp, t[3])
 
     @staticmethod
-    def find_electrodes(input_mask):
-        input_mask = input_mask.copy()
-        _, contours, hierarchy = cv2.findContours(input_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        contour_sizes = [(cv2.contourArea(contour), contour) for contour in contours]
-        biggest_contour = max(contour_sizes, key=lambda x: x[0])[1]
-        mask = np.zeros(input_mask.shape, np.uint8)
-        cv2.drawContours(mask, [biggest_contour], -1, (0, 255, 0), 3)
-        return biggest_contour, mask
-
-    def overlay_mask(self, mask):
-        rgb_mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
-        img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
-        return img
-
-    @staticmethod
-    def make_8by8_grid():
-        x = np.linspace(-4, 4, 8)
-        y = np.linspace(-4, 4, 8)
-        xx, yy = np.meshgrid(x, y, indexing='ij')
-        return xx, yy
-
-    @staticmethod
     def generate_grid():
-        pointsList = np.array([
+        initial_points = np.array([
                             [419.28543, 293.20193],
                             [649.6535, 188.68832],
                             [732.70465, 448.59],
                             [509.44885, 545.94147]
                             ], dtype=np.float32).tolist()
 
-        p1 = pointsList[0]
-        p2 = pointsList[1]
-        p3 = pointsList[2]
-        p4 = pointsList[3]
+        p1 = initial_points[0]
+        p2 = initial_points[1]
+        p3 = initial_points[2]
+        p4 = initial_points[3]
 
         number_on_side = 8
         ns = number_on_side
@@ -295,7 +303,7 @@ class Processing:
                 y = p4[1] * w1 + p3[1] * w2 + p2[1] * w3 + p1[1] * w4
 
                 grid_coord.append([x, y])
-        return grid_coord
+        return np.asarray(grid_coord), np.asarray(initial_points)
 
     @staticmethod
     def sliding_window(arr, window_size):
@@ -336,14 +344,79 @@ class Processing:
         cv2.ellipse(image_with_ellipse, ellipse, (100, 50), 2, cv2.LINE_AA)
         return image_with_ellipse
 
-    def get_two_images(self):
+    def get_two_images(self, path, frame1, frame2):
         """
-        Temporarily return two hard-coded images
-        :return:
+        Temporary method to read two frames.
+
+        :param path:
+        :param frame1: string name of the first image
+        :param frame2: string name of the second image
+        :return: gray, thresholded versions of the two frames
         """
-        path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
-        self.read_image(os.path.join(path, 'HeartVideo0001.jpg'))
-        gray_1, blur_1 = self.gray_and_blur(threshold=9)
+        self.read_image(os.path.join(path, frame1))
+        gray_1, _ = self.gray_and_blur(threshold=9)
+        self.read_image(os.path.join(path, frame2))
+        gray_2, _ = self.gray_and_blur(threshold=9)
+        return gray_1, gray_2
+
+    @staticmethod
+    def get_flow(im1, im2):
+        flow = cv2.calcOpticalFlowFarneback(im1, im2, None, 0.5, 3, 40, 11, 7, 1.5, 0)
+        mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+        ret2, th2 = cv2.threshold(np.uint8(mag), 100, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return th2
+
+    def find_heart_region(self, im, kernel=None):
+        if self._kernel is not None:
+            self._kernel = None
+        self._kernel = 5 if kernel is None else kernel
+        kernel_close = np.ones((self._kernel, self._kernel), np.uint8)
+        im_closed = cv2.morphologyEx(np.uint8(im), cv2.MORPH_CLOSE, kernel_close)
+        kernel_open = np.ones((self._kernel*3, self._kernel*3), np.uint8)
+        mask_clean = cv2.morphologyEx(im_closed, cv2.MORPH_OPEN, kernel_open)
+        kernel_erode = np.ones((self._kernel*3, self._kernel*3), np.uint8)
+        im_erosion = cv2.erode(mask_clean, kernel_erode, iterations=1)
+        nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(im_erosion, connectivity=8)
+        sizes = stats[1:, -1]
+        nb_components = nb_components - 1
+        min_size = 5000
+        initial_heart_region = np.zeros(im.shape)
+        for i in range(0, nb_components):
+            if sizes[i] >= min_size:
+                initial_heart_region[output == i + 1] = 255
+        kernel_dilate = np.ones((self._kernel*3, self._kernel*3), np.uint8)
+        initial_heart_region_dilate = cv2.dilate(np.uint8(initial_heart_region), kernel_dilate, iterations=1)
+        final_kernel = np.ones((self._kernel*13, self._kernel*13), np.uint8)
+        closed_heart_region = cv2.morphologyEx(np.uint8(initial_heart_region_dilate), cv2.MORPH_CLOSE, final_kernel)
+        blur_heart = cv2.bilateralFilter(closed_heart_region, 19, 75, 75)
+        heart_region = cv2.Canny(blur_heart, 100, 200)
+        return heart_region
+
+    @staticmethod
+    def draw_flow(img, flow, step=16):
+        h, w = img.shape[:2]
+        y, x = np.mgrid[step / 2:h:step, step / 2:w:step].reshape(2, -1).astype(int)
+        fx, fy = flow[y, x].T
+        lines = np.vstack([x, y, x + fx, y + fy]).T.reshape(-1, 2, 2)
+        lines = np.int32(lines + 0.5)
+        vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        cv2.polylines(vis, lines, 0, (0, 255, 0))
+        for (x1, y1), (x2, y2) in lines:
+            cv2.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
+        return vis
+
+    @staticmethod
+    def draw_hsv(flow):
+        h, w = flow.shape[:2]
+        fx, fy = flow[:, :, 0], flow[:, :, 1]
+        ang = np.arctan2(fy, fx) + np.pi
+        v = np.sqrt(fx * fx + fy * fy)
+        hsv = np.zeros((h, w, 3), np.uint8)
+        hsv[..., 0] = ang * (180 / np.pi / 2)
+        hsv[..., 1] = 255
+        hsv[..., 2] = np.minimum(v * 4, 255)
+        bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+        return bgr
 
     def feature_detect(self, h=2000, report_values=False):
         if report_values:
@@ -366,108 +439,17 @@ class Processing:
         return img
 
 
-def draw_flow(img, flow, step=16):
-    h, w = img.shape[:2]
-    y, x = np.mgrid[step / 2:h:step, step / 2:w:step].reshape(2, -1).astype(int)
-    fx, fy = flow[y, x].T
-    lines = np.vstack([x, y, x + fx, y + fy]).T.reshape(-1, 2, 2)
-    lines = np.int32(lines + 0.5)
-    vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    cv2.polylines(vis, lines, 0, (0, 255, 0))
-    for (x1, y1), (x2, y2) in lines:
-        cv2.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
-    return vis
-
-
-def draw_hsv(flow):
-    h, w = flow.shape[:2]
-    fx, fy = flow[:,:,0], flow[:,:,1]
-    ang = np.arctan2(fy, fx) + np.pi
-    v = np.sqrt(fx*fx+fy*fy)
-    hsv = np.zeros((h, w, 3), np.uint8)
-    hsv[...,0] = ang*(180/np.pi/2)
-    hsv[...,1] = 255
-    hsv[...,2] = np.minimum(v*4, 255)
-    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    return bgr
-
-
 if __name__ == '__main__':
-    ps = Processing()
-    ps.generateGridPoints4()
-
-    path = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
-    output_path = r'/hpc/mosa004/Sparc/Heart/output'
+    config = dict()
+    config['path'] = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
+    config['frame1'] = 'HeartVideo0001.jpg'
+    config['frame2'] = 'HeartVideo0003.jpg'
+    config['output_path'] = r'/hpc/mosa004/Sparc/Heart/output'
 
     PS = Processing()
-    im1 = os.path.join(path, 'HeartVideo0001.jpg')
-    PS.read_image(im1)
-    gray, blur = PS.gray_and_blur(threshold=9)
-
-    del PS
-    PS = Processing()
-    im2 = os.path.join(path, 'HeartVideo0003.jpg')
-    PS.read_image(im2)
-    next_gray, next_blur = PS.gray_and_blur(threshold=9)
-
-    flow = cv2.calcOpticalFlowFarneback(gray, next_gray, None, 0.5, 3, 40, 11, 7, 1.5, 0)
-    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-
-    ret2, th2 = cv2.threshold(np.uint8(mag), 100, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    kernel_close = np.ones((5, 5), np.uint8)
-    img_closed = cv2.morphologyEx(np.uint8(th2), cv2.MORPH_CLOSE, kernel_close)
-    kernel_open = np.ones((13, 13), np.uint8)
-    mask_clean = cv2.morphologyEx(img_closed, cv2.MORPH_OPEN, kernel_open)
-    kernel_erode = np.ones((15, 15), np.uint8)
-    img_erosion = cv2.erode(mask_clean, kernel_erode, iterations=1)
-
-    nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(img_erosion, connectivity=8)
-    sizes = stats[1:, -1]
-    nb_components = nb_components - 1
-    min_size = 5000
-    t2 = np.zeros(th2.shape)
-    for i in range(0, nb_components):
-        if sizes[i] >= min_size:
-            t2[output == i + 1] = 255
-
-    kernel_1 = np.ones((15, 15), np.uint8)
-    t2_dilate = cv2.dilate(np.uint8(t2), kernel_1, iterations=1)
-
-    kernel_close_1 = np.ones((65, 65), np.uint8)
-    img_closed_1 = cv2.morphologyEx(np.uint8(t2_dilate), cv2.MORPH_CLOSE, kernel_close_1)
-
-    blur = cv2.bilateralFilter(img_closed_1, 19, 75, 75)
-    edge_OF = cv2.Canny(blur, 100, 200)
-    blend = cv2.addWeighted(gray, 0.5, edge_OF, 0.5, 0)
-
-    # cv2.imshow("mag", mag)
-    # cv2.imshow("th2", th2)
-    # cv2.imshow("img_closed", img_closed)
-    # cv2.imshow("mask_clean", mask_clean)
-    # cv2.imshow("img_erosion", img_erosion)
-    # cv2.imshow("t2", t2)
-    # cv2.imshow("t2_dilate", t2_dilate)
-    # cv2.imshow("img_closed_1", img_closed_1)
-    # cv2.imshow("blur", blur)
-    # cv2.imshow("edge_OF", edge_OF)
-    # cv2.imshow("blend", blend)
-    # k = cv2.waitKey(20) & 0xFF
-
-    save_path = os.path.join(output_path, "segmentation")
-    cv2.imwrite(os.path.join(save_path, "gray.jpg"), next_gray)
-    cv2.imwrite(os.path.join(save_path, "th2.jpg"), th2)
-    cv2.imwrite(os.path.join(save_path, "img_closed.jpg"), img_closed)
-    cv2.imwrite(os.path.join(save_path, "mask_clean.jpg"), mask_clean)
-    cv2.imwrite(os.path.join(save_path, "img_erosion.jpg"), img_erosion)
-    cv2.imwrite(os.path.join(save_path, "t2.jpg"), t2)
-    cv2.imwrite(os.path.join(save_path, "t2_dilate.jpg"), t2_dilate)
-    cv2.imwrite(os.path.join(save_path, "img_closed_1.jpg"), img_closed_1)
-    cv2.imwrite(os.path.join(save_path, "blur.jpg"), blur)
-    cv2.imwrite(os.path.join(save_path, "edge_OF.jpg"), edge_OF)
-    cv2.imwrite(os.path.join(save_path, "blend.jpg"), blend)
-
-    print("Done!")
+    gray, next_gray = PS.get_two_images(config['path'], config['frame1'], config['frame2'])
+    flow_image = PS.get_flow(gray, next_gray)
+    heart = PS.find_heart_region(flow_image)
 
 
 
