@@ -5,7 +5,7 @@ import numpy as np
 import os, sys
 import cv2
 from optimization import Minimize
-import scipy.interpolate as interpolate
+from skimage.morphology import skeletonize
 import imutils
 
 
@@ -354,14 +354,15 @@ class Processing:
         :return: gray, thresholded versions of the two frames
         """
         self.read_image(os.path.join(path, frame1))
-        gray_1, _ = self.gray_and_blur(threshold=9)
+        gray_1, _ = self.gray_and_blur(threshold=3)
         self.read_image(os.path.join(path, frame2))
-        gray_2, _ = self.gray_and_blur(threshold=9)
+        gray_2, _ = self.gray_and_blur(threshold=3)
         return gray_1, gray_2
 
     @staticmethod
     def get_flow(im1, im2):
-        flow = cv2.calcOpticalFlowFarneback(im1, im2, None, 0.5, 3, 40, 11, 7, 1.5, 0)
+        # flow = cv2.calcOpticalFlowFarneback(im1, im2, None, 0.5, 3, 40, 11, 7, 1.5, 0)
+        flow = cv2.calcOpticalFlowFarneback(im1, im2, None, 0.5, 3, 100, 3, 71, 1.5, 0)
         mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
         ret2, th2 = cv2.threshold(np.uint8(mag), 100, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return th2
@@ -389,7 +390,47 @@ class Processing:
         final_kernel = np.ones((self._kernel*13, self._kernel*13), np.uint8)
         closed_heart_region = cv2.morphologyEx(np.uint8(initial_heart_region_dilate), cv2.MORPH_CLOSE, final_kernel)
         blur_heart = cv2.bilateralFilter(closed_heart_region, 19, 75, 75)
-        heart_region = cv2.Canny(blur_heart, 100, 200)
+        return blur_heart
+
+    def segment_heart(self, im, mask, kernel=None, max_filter=6000, min_filter=50):
+        if self._kernel is not None:
+            self._kernel = None
+        self._kernel = 3 if kernel is None else kernel
+
+        segmentation = cv2.Canny(im, 70, 100)
+        mask_image = cv2.bitwise_and(segmentation, segmentation, mask=mask)
+
+        kernel = np.ones((self._kernel+10, self._kernel+10), np.uint8)
+        im_closed = cv2.morphologyEx(np.uint8(mask_image), cv2.MORPH_CLOSE, kernel)
+        im_closed = cv2.dilate(np.uint8(im_closed), kernel, iterations=1)
+        mask_clean = cv2.morphologyEx(im_closed, cv2.MORPH_OPEN, kernel)
+
+        nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(mask_clean, connectivity=8)
+        sizes = stats[1:, -1]
+        nb_components = nb_components - 1
+        max_size = max_filter
+        heart_region_inital = np.zeros(mask_clean.shape)
+        for i in range(0, nb_components):
+            if sizes[i] <= max_size:
+                heart_region_inital[output == i + 1] = 255
+
+        kernel = np.ones((self._kernel*3, self._kernel*3), np.uint8)
+        im_erosion = cv2.erode(heart_region_inital, kernel, iterations=1)
+        im_erosion = np.asarray(im_erosion, np.uint8)
+
+        im_erosion = im_erosion.astype(np.uint8)
+        im_erosion[im_erosion == 255] = int(1)
+        skeleton = skeletonize(im_erosion)
+
+        nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(skeleton.astype(np.uint8),
+                                                                                   connectivity=8)
+        sizes = stats[1:, -1]
+        nb_components = nb_components - 1
+        max_size = min_filter
+        heart_region = np.zeros(im_erosion.shape)
+        for i in range(0, nb_components):
+            if sizes[i] >= max_size:
+                heart_region[output == i + 1] = 255
         return heart_region
 
     @staticmethod
@@ -440,6 +481,8 @@ class Processing:
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+
     config = dict()
     config['path'] = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
     config['frame1'] = 'HeartVideo0001.jpg'
@@ -449,7 +492,11 @@ if __name__ == '__main__':
     PS = Processing()
     gray, next_gray = PS.get_two_images(config['path'], config['frame1'], config['frame2'])
     flow_image = PS.get_flow(gray, next_gray)
-    heart = PS.find_heart_region(flow_image)
+    heart_mask = PS.find_heart_region(flow_image, kernel=5)
+    heart = PS.segment_heart(gray, heart_mask)
+    plt.imshow(heart)
+    plt.show()
+
 
 
 
