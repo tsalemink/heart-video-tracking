@@ -15,7 +15,7 @@ class Processing:
         return self._gray
 
     def read_image(self, file_name):
-        self._image = cv2.imread(file_name, 1)
+        self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
 
     def filter_and_threshold(self):
         if self._image is None:
