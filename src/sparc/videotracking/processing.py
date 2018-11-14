@@ -1,12 +1,16 @@
 from __future__ import division
 
-from numpy import *
-import numpy as np
-import os, sys
+import os
 import cv2
-from optimization import Minimize
+
+import numpy as np
+import scipy
+
 from skimage.morphology import skeletonize
-import imutils
+from scipy.spatial import cKDTree
+from scipy import optimize
+
+from sparc.videotracking.optimization import Minimize
 
 
 class Processing:
@@ -18,14 +22,13 @@ class Processing:
         self._blur_hsv = None
         self._roi_mask = None
         self._electrode_mask = None
-        self._finalmask = None
+        self._final_mask = None
         self._kernel = None
         self._bgr = None
-        self.roi = None
+        self._roi = None
         self._overlay_mask = None
         self._overlay = None
-        self.threshold = None
-        self._image_size = None
+        self._threshold = None
         self._detected_electrodes = None
         self._grid = None
         self._full_detected_electrodes = None
@@ -35,9 +38,9 @@ class Processing:
         if self._image is None:
             raise Exception("ROI---No image selected! Please read the image first.")
 
-        self.roi = cv2.selectROI(self._image)
+        self._roi = cv2.selectROI(self._image)
         cv2.destroyAllWindows()
-        return self.roi
+        return self._roi
 
     def get_image_size(self):
         if self._image is None:
@@ -48,29 +51,29 @@ class Processing:
         return self._blur_hsv, self._gray
 
     def read_image(self, file_name):
-        self._image = cv2.imread(file_name, 1)
+        self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
 
     def gray_and_blur(self, threshold=None):
         if self._image is None:
             raise Exception("No image selected! Please read the image first.")
-        self.threshold = 5 if threshold is None else threshold
+        self._threshold = 5 if threshold is None else threshold
 
         self._gray = cv2.cvtColor(self._image, cv2.COLOR_BGR2GRAY)
         if self._blur is not None:
             self._blur = None
-        self._blur = cv2.GaussianBlur(self._gray, (self.threshold, self.threshold), 0)
+        self._blur = cv2.GaussianBlur(self._gray, (self._threshold, self._threshold), 0)
         return self._gray, self._blur
 
     def rgb_and_blur_and_hsv(self, threshold=None):
         if self._image is None:
             raise Exception("No image selected! Please read the image first.")
-        self.threshold = 5 if threshold is None else threshold
+        self._threshold = 5 if threshold is None else threshold
 
         self._rgb = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)
         if self._blur is not None:
             self._blur = None
 
-        self._blur = cv2.GaussianBlur(self._rgb, (self.threshold, self.threshold), 0)
+        self._blur = cv2.GaussianBlur(self._rgb, (self._threshold, self._threshold), 0)
         self._blur_hsv = cv2.cvtColor(self._blur, cv2.COLOR_RGB2HSV)
         self._gray, self._blur = self.gray_and_blur(threshold=9)
         return self._gray
@@ -86,10 +89,10 @@ class Processing:
         return np.array([0, 0, 0]), np.array([15, 15, 15])
 
     @staticmethod
-    def some_paramerters():
+    def some_parameters():
         params = cv2.SimpleBlobDetector_Params()
-        params.minThreshold = 90;
-        params.maxThreshold = 200;
+        params.minThreshold = 90
+        params.maxThreshold = 200
         params.filterByArea = True
         params.maxArea = 1000
         params.minArea = 20
@@ -104,14 +107,14 @@ class Processing:
         params.blobColor = 0
         return params
 
-    def detect_electrode(self):
-        min_boundary, max_boudary = self.electrode_boundary()
-        self._electrode_mask = cv2.inRange(self._blur_hsv, min_boundary, max_boudary)
+    def determine_electrode_mask(self):
+        min_boundary, max_boundary = self.electrode_boundary()
+        self._electrode_mask = cv2.inRange(self._blur_hsv, min_boundary, max_boundary)
         return self._electrode_mask
 
     def final_mask(self):
-        self._finalmask = self._electrode_mask + self._roi_mask
-        return self._finalmask
+        self._final_mask = self._electrode_mask + self._roi_mask
+        return self._final_mask
 
     @staticmethod
     def find_electrodes(input_mask):
@@ -128,33 +131,29 @@ class Processing:
         img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
         return img
 
-    def draw_electrodes(self, kernel=None):
-        from matplotlib import pyplot as plt
-        from functools import partial
-
+    def detect_electrodes(self, kernel=None):
         self._kernel = 15 if kernel is None else kernel
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
-        mask_closed = cv2.morphologyEx(self._finalmask, cv2.MORPH_CLOSE, kernel)
+        mask_closed = cv2.morphologyEx(self._final_mask, cv2.MORPH_CLOSE, kernel)
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         _, mask = self.find_electrodes(mask_clean)
         self._overlay = self.overlay_mask(mask_clean)
 
-        params = self.some_paramerters()
-        ver = (cv2.__version__).split('.')
+        params = self.some_parameters()
+        ver = cv2.__version__.split('.')
         if int(ver[0]) < 3:
             detector = cv2.SimpleBlobDetector(params)
         else:
             detector = cv2.SimpleBlobDetector_create(params)
-        cv2.circle(self._overlay, (mask.shape[0], mask.shape[1]), 280, 1, thickness=-1)
+        # cv2.circle(self._overlay, (mask.shape[0], mask.shape[1]), 280, 1, thickness=-1)
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
-        keypoints = detector.detect(masked_data)
-        circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
-                                    cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        key_points = detector.detect(masked_data)
+        # circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
+        #                             cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-        self._detected_electrodes = np.asarray([key_point.pt for key_point in keypoints])
-        detected_electrode_array_size = len(self._detected_electrodes)
+        self._detected_electrodes = np.asarray([key_point.pt for key_point in key_points])
 
-        self._full_detected_electrodes = self.optimize(visualize=True)
+        self._full_detected_electrodes = self._optimize()
 
         self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:, 0])]
         self._full_detected_electrodes = self._full_detected_electrodes[np.argsort(self._full_detected_electrodes[:, 0])]
@@ -168,9 +167,9 @@ class Processing:
         # self._full_detected_electrodes[:detected_electrode_array_size] = self._detected_electrodes
 
         # self._full_detected_electrodes = self.optimization(self._grid, self._detected_electrodes)
-        return self._full_detected_electrodes, circled
+        return self._full_detected_electrodes, 0.0
 
-    def optimize(self, visualize=False, callback=None):
+    def _optimize(self, visualize=False, callback=None):
 
         def visualization(iteration, error, X, Y, ax):
             plt.cla()
@@ -191,12 +190,11 @@ class Processing:
         temp = list()
         for point in range(len(self._grid)):
             if self._grid[point] in fixed_points:
-                print("here")
                 continue
             temp.append(self._grid[point])
 
         temp = np.asarray(temp)
-        reg = Minimize(self._detected_electrodes, temp, max_iter=100000, tolerance=1e-11)
+        reg = Minimize(self._detected_electrodes, temp, max_iter=100000, tolerance=1e-7)
         reg.tolerance = 1e-13
         reg.register(callback)
 
@@ -205,10 +203,6 @@ class Processing:
         return full_electrodes
 
     def optimization(self, X, Y):
-        import scipy
-        from scipy.spatial import cKDTree
-        from scipy import optimize
-
         """
         This optimization was tested and performed slower than the one currently used in draw_electrodes().
 
@@ -253,10 +247,10 @@ class Processing:
         return optimized_points
 
     def affine_about_CoI(self, x, t):
-        self._image_size = self.get_image_size()
-        xO = x - array(self._image_size) / 2
+        image_size = self.get_image_size()
+        xO = x - np.array(image_size) / 2
         xOT = Processing.affine(xO, t)
-        return xOT + array(self._image_size) / 2
+        return xOT + np.array(image_size) / 2
 
     @staticmethod
     def affine(x, t):
