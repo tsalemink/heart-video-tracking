@@ -50,6 +50,9 @@ class Processing:
     def get_filtered_image(self):
         return self._blur_hsv, self._gray
 
+    def get_gray_image(self):
+        return self._gray
+
     def get_detected_electrode_points(self):
         return self._detected_electrodes
 
@@ -81,7 +84,7 @@ class Processing:
 
         self._blur = cv2.GaussianBlur(self._rgb, (self._threshold, self._threshold), 0)
         self._blur_hsv = cv2.cvtColor(self._blur, cv2.COLOR_RGB2HSV)
-        self._gray, self._blur = self.gray_and_blur(threshold=9)
+        self._gray, self._blur = self.gray_and_blur(threshold=self._threshold)
         return self._gray
 
     def mask_and_image(self, roi):
