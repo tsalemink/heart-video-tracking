@@ -247,7 +247,7 @@ class Processing:
             res = scipy.optimize.minimize(obj, t0, method='Nelder-Mead',
                                           options={'disp': False, 'xatol': 1e-6, 'fatol': 1e-6, 'maxiter': 1e7})
             finalRMSE = scipy.sqrt(obj(res.x).mean())
-            print(finalRMSE)
+            print('final RMS', finalRMSE)
             minima.append(finalRMSE)
             reses.append(res.x)
 
