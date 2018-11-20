@@ -50,6 +50,12 @@ class Processing:
     def get_filtered_image(self):
         return self._blur_hsv, self._gray
 
+    def get_detected_electrode_points(self):
+        return self._detected_electrodes
+
+    def get_full_detected_electrode_points(self):
+        return self._full_detected_electrodes
+
     def read_image(self, file_name):
         self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
 
@@ -194,7 +200,7 @@ class Processing:
             temp.append(self._grid[point])
 
         temp = np.asarray(temp)
-        reg = Minimize(self._detected_electrodes, temp, max_iter=100000, tolerance=1e-7)
+        reg = Minimize(self._detected_electrodes, temp, max_iter=100000, tolerance=1e-11)
         reg.tolerance = 1e-13
         reg.register(callback)
 
