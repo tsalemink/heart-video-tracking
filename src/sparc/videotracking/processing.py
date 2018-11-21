@@ -11,6 +11,7 @@ from scipy.spatial import cKDTree
 from scipy import optimize
 
 from sparc.videotracking.optimization import Minimize
+import matplotlib.pyplot as plt
 
 
 class Processing:
@@ -32,15 +33,6 @@ class Processing:
         self._detected_electrodes = None
         self._grid = None
         self._full_detected_electrodes = None
-
-    # TEMPORARY ROI SELECTOR METHOD
-    def select_roi(self):
-        if self._image is None:
-            raise Exception("ROI---No image selected! Please read the image first.")
-
-        self._roi = cv2.selectROI(self._image)
-        cv2.destroyAllWindows()
-        return self._roi
 
     def get_image_size(self):
         if self._image is None:
@@ -79,9 +71,11 @@ class Processing:
         return self._gray
 
     def mask_and_image(self, roi):
-        r = roi
+        self._roi = roi
         self._roi_mask = np.zeros(self._blur.shape[:2], dtype=np.uint8)
-        cv2.rectangle(self._roi_mask, (r[1], r[0]), (r[1] + r[2], r[2] + r[3]), 255, thickness=-1)
+        cv2.rectangle(self._roi_mask,
+                      (self._roi[1], self._roi[0]), (self._roi[1] + self._roi[3], self._roi[2] + self._roi[0]),
+                      255, thickness=-1)
         return self._roi_mask
 
     @staticmethod
@@ -132,13 +126,14 @@ class Processing:
         return img
 
     def detect_electrodes(self, kernel=None):
+        import matplotlib.pyplot as plt
         self._kernel = 15 if kernel is None else kernel
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
         mask_closed = cv2.morphologyEx(self._final_mask, cv2.MORPH_CLOSE, kernel)
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         _, mask = self.find_electrodes(mask_clean)
         self._overlay = self.overlay_mask(mask_clean)
-
+        plt.imshow(self._overlay)
         params = self.some_parameters()
         ver = cv2.__version__.split('.')
         if int(ver[0]) < 3:
@@ -155,19 +150,9 @@ class Processing:
 
         self._full_detected_electrodes = self._optimize()
 
-        self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:, 0])]
+        # self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:, 0])]
         self._full_detected_electrodes = self._full_detected_electrodes[np.argsort(self._full_detected_electrodes[:, 0])]
-
-        # xdim_mean = np.mean(self._full_detected_electrodes, axis=0)[0]
-        # xdim_std = np.std(self._full_detected_electrodes, axis=0)[0]
-        # for i in range(len(self._full_detected_electrodes)):
-        #     if self._full_detected_electrodes[i][0] < xdim_mean - xdim_std:
-        #         self._full_detected_electrodes[i] = self._detected_electrodes[i]
-
-        # self._full_detected_electrodes[:detected_electrode_array_size] = self._detected_electrodes
-
-        # self._full_detected_electrodes = self.optimization(self._grid, self._detected_electrodes)
-        return self._full_detected_electrodes, 0.0
+        return self._detected_electrodes, 0.0
 
     def _optimize(self, visualize=False, callback=None):
 
