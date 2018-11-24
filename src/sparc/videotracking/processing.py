@@ -1,4 +1,9 @@
 from __future__ import division
+
+import warnings
+warnings.filterwarnings("ignore", message="numpy.dtype size changed")
+warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
+
 from functools import partial
 import os
 import cv2
@@ -89,7 +94,7 @@ class Processing:
         params.minThreshold = 20
         params.maxThreshold = 200
         params.filterByArea = True
-        params.maxArea = 10000
+        params.maxArea = 100
         params.minArea = 20
         params.filterByCircularity = True
         params.minCircularity = 0.45
