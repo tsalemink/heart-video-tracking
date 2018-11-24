@@ -1,5 +1,5 @@
 from __future__ import division
-
+from functools import partial
 import os
 import cv2
 
@@ -7,6 +7,7 @@ import numpy as np
 import scipy
 
 from skimage.morphology import skeletonize
+
 from scipy.spatial import cKDTree
 from scipy import optimize
 
@@ -67,7 +68,7 @@ class Processing:
 
         self._blur = cv2.GaussianBlur(self._rgb, (self._threshold, self._threshold), 0)
         self._blur_hsv = cv2.cvtColor(self._blur, cv2.COLOR_RGB2HSV)
-        self._gray, self._blur = self.gray_and_blur(threshold=9)
+        self._gray, self._blur = self.gray_and_blur(threshold=self._threshold)
         return self._gray
 
     def mask_and_image(self, roi):
@@ -85,20 +86,19 @@ class Processing:
     @staticmethod
     def some_parameters():
         params = cv2.SimpleBlobDetector_Params()
-        params.minThreshold = 90
+        params.minThreshold = 20
         params.maxThreshold = 200
         params.filterByArea = True
-        params.maxArea = 1000
+        params.maxArea = 10000
         params.minArea = 20
         params.filterByCircularity = True
         params.minCircularity = 0.45
-        params.filterByConvexity = False
-        # params.minConvexity = 0.45
+        params.filterByConvexity = True
+        params.minConvexity = 0.45
         params.filterByInertia = True
-        params.minInertiaRatio = 0.1
+        # params.minInertiaRatio = 0.001
         params.maxInertiaRatio = 1
-        params.filterByColor = True
-        params.blobColor = 0
+        # params.minDistBetweenBlobs = 17
         return params
 
     def determine_electrode_mask(self):
@@ -122,69 +122,80 @@ class Processing:
 
     def overlay_mask(self, mask):
         rgb_mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
-        img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
+        # img = cv2.addWeighted(rgb_mask, 0.5, self._rgb, 0.5, 0)
+        img = cv2.addWeighted(mask, 0.5, self._gray, 0.5, 0)
         return img
 
     def detect_electrodes(self, kernel=None):
-        import matplotlib.pyplot as plt
         self._kernel = 15 if kernel is None else kernel
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
         mask_closed = cv2.morphologyEx(self._final_mask, cv2.MORPH_CLOSE, kernel)
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         _, mask = self.find_electrodes(mask_clean)
         self._overlay = self.overlay_mask(mask_clean)
-        plt.imshow(self._overlay)
         params = self.some_parameters()
         ver = cv2.__version__.split('.')
         if int(ver[0]) < 3:
             detector = cv2.SimpleBlobDetector(params)
         else:
             detector = cv2.SimpleBlobDetector_create(params)
-        # cv2.circle(self._overlay, (mask.shape[0], mask.shape[1]), 280, 1, thickness=-1)
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
         key_points = detector.detect(masked_data)
-        # circled = cv2.drawKeypoints(self._image, keypoints, np.array([]), (0, 255, 0),
-        #                             cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        temp = [21, 23, 31, 38, 47, 56, 59, 63]
 
         self._detected_electrodes = np.asarray([key_point.pt for key_point in key_points])
-
+        i, j = self._create_grid()
+        self._electrode_mesh = np.array((i.ravel(), j.ravel())).T
         self._full_detected_electrodes = self._optimize()
+        final_grid = np.zeros((64, 2))
+        final_grid[:self._detected_electrodes.shape[0]] = self._detected_electrodes
 
-        # self._detected_electrodes = self._detected_electrodes[np.argsort(self._detected_electrodes[:, 0])]
-        self._full_detected_electrodes = self._full_detected_electrodes[np.argsort(self._full_detected_electrodes[:, 0])]
-        return self._detected_electrodes, 0.0
+        ct = 1
+        for pt in range(len(final_grid)):
+            if pt in temp:
+                final_grid[self._detected_electrodes.shape[0]-1+ct] = self._full_detected_electrodes[pt]
+                ct+=1
+        return final_grid, 0.0
 
-    def _optimize(self, visualize=False, callback=None):
+    def _create_grid(self):
+        pt1 = [self._roi[1], self._roi[0]]
+        pt2 = [self._roi[1] + self._roi[3], self._roi[0] + self._roi[2]]
+        x, y = np.linspace(pt1[0], pt2[0], 8), np.linspace(pt1[1], pt2[1], 8)
+        xx, yy = np.meshgrid(x, y)
+        return xx, yy
 
-        def visualization(iteration, error, X, Y, ax):
+    @staticmethod
+    def _closest_points(a, B):
+        deltas = B - a
+        dist_2 = np.einsum('ij,ij->i', deltas, deltas)
+        return np.argmin(dist_2)
+
+    def _optimize(self, visualise=False, callback=None):
+
+        def visualize(iteration, error, X, Y, ax):
             plt.cla()
-            ax.scatter(X[:, 0], X[:, 1], color='red')
-            ax.scatter(Y[:, 0], Y[:, 1], color='blue')
+            ax.scatter(X[:, 0], X[:, 1], color='red', label='DETECTED')
+            ax.scatter(Y[:, 0], Y[:, 1], color='blue', label='GRID')
+            plt.text(0.87, 0.92, 'Iteration: {:d}\nError: {:06.4f}'.format(iteration, error),
+                     horizontalalignment='center', verticalalignment='center', transform=ax.transAxes,
+                     fontsize='x-large')
+            ax.legend(loc='upper left', fontsize='x-large')
             plt.draw()
-            print("iteration %d, error %.10f" % (iteration, error))
             plt.pause(0.001)
 
-        if visualize:
-            from matplotlib import pyplot as plt
-            from functools import partial
+        if visualise:
             fig = plt.figure()
             fig.add_axes([0, 0, 1, 1])
-            callback = partial(visualization, ax=fig.axes[0])
+            callback = partial(visualize, ax=fig.axes[0])
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.01)
+            reg.register(callback)
+            plt.show()
+        else:
+            callback = None
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.01)
+            reg.register(callback)
 
-        self._grid, fixed_points = self.generate_grid()
-        temp = list()
-        for point in range(len(self._grid)):
-            if self._grid[point] in fixed_points:
-                continue
-            temp.append(self._grid[point])
-
-        temp = np.asarray(temp)
-        reg = Minimize(self._detected_electrodes, temp, max_iter=100000, tolerance=1e-7)
-        reg.tolerance = 1e-13
-        reg.register(callback)
-
-        full_electrodes = np.concatenate((reg.TY, fixed_points))
-
+        full_electrodes = reg.TY
         return full_electrodes
 
     def optimization(self, X, Y):
