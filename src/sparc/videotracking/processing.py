@@ -192,12 +192,12 @@ class Processing:
             fig = plt.figure()
             fig.add_axes([0, 0, 1, 1])
             callback = partial(visualize, ax=fig.axes[0])
-            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.01)
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.1e-9)
             reg.register(callback)
             plt.show()
         else:
             callback = None
-            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.01)
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.1e-9)
             reg.register(callback)
 
         full_electrodes = reg.TY
