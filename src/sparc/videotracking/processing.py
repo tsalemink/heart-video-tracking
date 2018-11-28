@@ -8,6 +8,9 @@ from functools import partial
 import os
 import cv2
 
+from PIL import Image
+import StringIO
+
 import numpy as np
 import scipy
 
@@ -49,7 +52,13 @@ class Processing:
         return self._blur_hsv, self._gray
 
     def read_image(self, file_name):
-        self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
+        if isinstance(file_name, (bytes, bytearray)):
+            pil_image = Image.open(StringIO.StringIO(file_name))
+            self._image = np.array(pil_image)
+        elif type(file_name) == str:
+            self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
+        else:
+            raise TypeError("Image format not supported. Only file path string or memory byte buffer are accepted.")
 
     def gray_and_blur(self, threshold=None):
         if self._image is None:
@@ -79,8 +88,11 @@ class Processing:
     def mask_and_image(self, roi):
         self._roi = roi
         self._roi_mask = np.zeros(self._blur.shape[:2], dtype=np.uint8)
+        # cv2.rectangle(self._roi_mask,
+        #               (self._roi[1], self._roi[0]), (self._roi[1] + self._roi[3], self._roi[2] + self._roi[0]),
+        #               255, thickness=-1)
         cv2.rectangle(self._roi_mask,
-                      (self._roi[1], self._roi[0]), (self._roi[1] + self._roi[3], self._roi[2] + self._roi[0]),
+                      (self._roi[1], self._roi[0]), (self._roi[3], self._roi[2]),
                       255, thickness=-1)
         return self._roi_mask
 
@@ -146,12 +158,13 @@ class Processing:
             detector = cv2.SimpleBlobDetector_create(params)
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
         key_points = detector.detect(masked_data)
-        temp = [21, 23, 31, 38, 47, 56, 59, 63]
+        # temp = [21, 23, 31, 38, 47, 56, 59, 63]
+        temp = [3, 4, 5, 7, 12, 13, 15, 20, 23, 31, 39, 45, 46, 47, 48, 52, 54, 55, 56, 57, 62, 63]
 
         self._detected_electrodes = np.asarray([key_point.pt for key_point in key_points])
         i, j = self._create_grid()
         self._electrode_mesh = np.array((i.ravel(), j.ravel())).T
-        self._full_detected_electrodes = self._optimize()
+        self._full_detected_electrodes = self._optimize(visualise=True)
         final_grid = np.zeros((64, 2))
         final_grid[:self._detected_electrodes.shape[0]] = self._detected_electrodes
 
@@ -160,7 +173,8 @@ class Processing:
             if pt in temp:
                 final_grid[self._detected_electrodes.shape[0]-1+ct] = self._full_detected_electrodes[pt]
                 ct+=1
-        return final_grid, 0.0
+
+        return self._full_detected_electrodes, 0.0
 
     def _create_grid(self):
         pt1 = [self._roi[1], self._roi[0]]
@@ -192,12 +206,12 @@ class Processing:
             fig = plt.figure()
             fig.add_axes([0, 0, 1, 1])
             callback = partial(visualize, ax=fig.axes[0])
-            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.1e-9)
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=1000, tolerance=0.1e-9)
             reg.register(callback)
             plt.show()
         else:
             callback = None
-            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=100, tolerance=0.1e-9)
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=1000, tolerance=0.1e-9)
             reg.register(callback)
 
         full_electrodes = reg.TY
