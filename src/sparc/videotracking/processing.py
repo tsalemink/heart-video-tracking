@@ -94,9 +94,6 @@ class Processing:
     def mask_and_image(self, roi):
         self._roi = roi
         self._roi_mask = np.zeros(self._blur.shape[:2], dtype=np.uint8)
-        # cv2.rectangle(self._roi_mask,
-        #               (self._roi[1], self._roi[0]), (self._roi[1] + self._roi[3], self._roi[2] + self._roi[0]),
-        #               255, thickness=-1)
         cv2.rectangle(self._roi_mask,
                       (self._roi[0], self._roi[1]), (self._roi[2], self._roi[3]),
                       255, thickness=-1)
