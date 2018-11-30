@@ -1,8 +1,6 @@
 from __future__ import division
 
 import warnings
-warnings.filterwarnings("ignore", message="numpy.dtype size changed")
-warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 from functools import partial
 import os
@@ -20,7 +18,9 @@ from scipy.spatial import cKDTree
 from scipy import optimize
 
 from sparc.videotracking.optimization import Minimize
-import matplotlib.pyplot as plt
+
+warnings.filterwarnings("ignore", message="numpy.dtype size changed")
+warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 
 class Processing:

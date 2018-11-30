@@ -21,7 +21,7 @@ Topic :: Software Development :: Libraries :: Python Modules
 with open('README.rst') as f:
     doc_lines = f.read().split("\n")
 
-requires = ['opencv_python', 'opencv_contrib_python', 'numpy']
+requires = ['opencv_python', 'opencv_contrib_python', 'numpy', 'scipy', 'scikit-image', 'pillow']
 
 setup(
     name='sparc.videotracking',
