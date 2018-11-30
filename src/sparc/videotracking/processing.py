@@ -53,6 +53,15 @@ class Processing:
     def get_filtered_image(self):
         return self._blur_hsv, self._gray
 
+    def get_gray_image(self):
+        return self._gray
+
+    def get_detected_electrode_points(self):
+        return self._detected_electrodes
+
+    def get_full_detected_electrode_points(self):
+        return self._full_detected_electrodes
+
     def read_image(self, file_name):
         if isinstance(file_name, (bytes, bytearray)):
             pil_image = Image.open(StringIO.StringIO(file_name))
@@ -97,6 +106,7 @@ class Processing:
         cv2.rectangle(self._roi_mask,
                       (self._roi[0], self._roi[1]), (self._roi[2], self._roi[3]),
                       255, thickness=-1)
+
         return self._roi_mask
 
     @staticmethod
@@ -279,7 +289,7 @@ class Processing:
             res = scipy.optimize.minimize(obj, t0, method='Nelder-Mead',
                                           options={'disp': False, 'xatol': 1e-6, 'fatol': 1e-6, 'maxiter': 1e7})
             finalRMSE = scipy.sqrt(obj(res.x).mean())
-            print(finalRMSE)
+            print('final RMS', finalRMSE)
             minima.append(finalRMSE)
             reses.append(res.x)
 
@@ -529,7 +539,3 @@ if __name__ == '__main__':
     heart = PS.segment_heart(gray, heart_mask)
     plt.imshow(heart)
     plt.show()
-
-
-
-
