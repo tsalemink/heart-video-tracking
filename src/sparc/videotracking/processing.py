@@ -40,6 +40,8 @@ class Processing:
         self._overlay = None
         self._threshold = None
         self._detected_electrodes = None
+        self._reference_points = np.array([], dtype=np.float32)
+        self._is_buffer = True
         self._grid = None
         self._full_detected_electrodes = None
 
@@ -57,6 +59,10 @@ class Processing:
             self._image = np.array(pil_image)
         elif type(file_name) == str:
             self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
+            self._is_buffer = False
+        elif type(file_name) == unicode:
+            self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
+            self._is_buffer = False
         else:
             raise TypeError("Image format not supported. Only file path string or memory byte buffer are accepted.")
 
@@ -92,7 +98,7 @@ class Processing:
         #               (self._roi[1], self._roi[0]), (self._roi[1] + self._roi[3], self._roi[2] + self._roi[0]),
         #               255, thickness=-1)
         cv2.rectangle(self._roi_mask,
-                      (self._roi[1], self._roi[0]), (self._roi[3], self._roi[2]),
+                      (self._roi[0], self._roi[1]), (self._roi[2], self._roi[3]),
                       255, thickness=-1)
         return self._roi_mask
 
@@ -112,9 +118,9 @@ class Processing:
         params.minCircularity = 0.45
         params.filterByConvexity = True
         params.minConvexity = 0.45
-        params.filterByInertia = True
+        # params.filterByInertia = True
         # params.minInertiaRatio = 0.001
-        params.maxInertiaRatio = 1
+        # params.maxInertiaRatio = 1
         # params.minDistBetweenBlobs = 17
         return params
 
@@ -144,7 +150,7 @@ class Processing:
         return img
 
     def detect_electrodes(self, kernel=None):
-        self._kernel = 15 if kernel is None else kernel
+        self._kernel = 9 if kernel is None else kernel
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self._kernel, self._kernel))
         mask_closed = cv2.morphologyEx(self._final_mask, cv2.MORPH_CLOSE, kernel)
         mask_clean = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
@@ -158,27 +164,50 @@ class Processing:
             detector = cv2.SimpleBlobDetector_create(params)
         masked_data = cv2.bitwise_and(self._overlay, self._overlay, mask=mask_clean)
         key_points = detector.detect(masked_data)
-        # temp = [21, 23, 31, 38, 47, 56, 59, 63]
-        temp = [3, 4, 5, 7, 12, 13, 15, 20, 23, 31, 39, 45, 46, 47, 48, 52, 54, 55, 56, 57, 62, 63]
-
         self._detected_electrodes = np.asarray([key_point.pt for key_point in key_points])
-        i, j = self._create_grid()
-        self._electrode_mesh = np.array((i.ravel(), j.ravel())).T
-        self._full_detected_electrodes = self._optimize(visualise=True)
+
+        if self._is_buffer:
+            self._reference_points = np.array([
+                [489.205, 301.08],
+                [698.477, 205.956],
+                [787.137, 438.059],
+                [571.962, 524.62]], dtype=np.float32)
+            temp = [1, 2, 3, 4, 5, 6, 13, 14, 15, 16, 17, 22, 24, 25, 26, 38, 55, 62]
+            self._electrode_mesh, _ = self._generate_grid()
+            self._full_detected_electrodes = self._optimize(visualise=False)
+        else:
+            self._reference_points = np.array([
+                [419.28543, 293.20193],
+                [649.6535, 188.68832],
+                [732.70465, 448.59],
+                [509.44885, 545.94147]], dtype=np.float32)
+
+                # [419.764, 291.567],
+                # [649.012, 188.834],
+                # [733.672, 449.473],
+                # [506.237, 426.694]], dtype=np.float32)
+            temp = [2, 3, 5, 18, 39]
+            i, j = self._create_grid()
+            self._electrode_mesh = np.array((i.ravel(), j.ravel())).T
+            self._electrode_mesh, _ = self._generate_grid()
+            self._detected_electrodes = np.delete(self._detected_electrodes, (16), axis=0)
+
+        self._full_detected_electrodes = self._optimize(visualise=False)
+
         final_grid = np.zeros((64, 2))
         final_grid[:self._detected_electrodes.shape[0]] = self._detected_electrodes
-
-        ct = 1
+        final_grid[self._detected_electrodes.shape[0]:self._detected_electrodes.shape[0]+len(self._reference_points)] =\
+            self._reference_points
+        ct = 0
         for pt in range(len(final_grid)):
             if pt in temp:
-                final_grid[self._detected_electrodes.shape[0]-1+ct] = self._full_detected_electrodes[pt]
+                final_grid[self._detected_electrodes.shape[0]+len(self._reference_points)+ct] = self._full_detected_electrodes[pt]
                 ct+=1
-
-        return self._full_detected_electrodes, 0.0
+        return final_grid, 0.0
 
     def _create_grid(self):
-        pt1 = [self._roi[1], self._roi[0]]
-        pt2 = [self._roi[1] + self._roi[3], self._roi[0] + self._roi[2]]
+        pt1 = [self._roi[0], self._roi[1]]
+        pt2 = [self._roi[2], self._roi[3]]
         x, y = np.linspace(pt1[0], pt2[0], 8), np.linspace(pt1[1], pt2[1], 8)
         xx, yy = np.meshgrid(x, y)
         return xx, yy
@@ -206,12 +235,12 @@ class Processing:
             fig = plt.figure()
             fig.add_axes([0, 0, 1, 1])
             callback = partial(visualize, ax=fig.axes[0])
-            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=1000, tolerance=0.1e-9)
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=500, tolerance=0.1e-9)
             reg.register(callback)
             plt.show()
         else:
             callback = None
-            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=1000, tolerance=0.1e-9)
+            reg = Minimize(self._detected_electrodes, self._electrode_mesh, max_iter=500, tolerance=0.1e-9)
             reg.register(callback)
 
         full_electrodes = reg.TY
@@ -283,15 +312,14 @@ class Processing:
         temp = scipy.dot(T, X)[:2, :].T
         return scipy.multiply(temp, t[3])
 
-    @staticmethod
-    def generate_grid():
-        initial_points = np.array([
-                            [419.28543, 293.20193],
-                            [649.6535, 188.68832],
-                            [732.70465, 448.59],
-                            [509.44885, 545.94147]
-                            ], dtype=np.float32).tolist()
-
+    def _generate_grid(self):
+        # initial_points = np.array([
+        #                     [419.28543, 293.20193],
+        #                     [649.6535, 188.68832],
+        #                     [732.70465, 448.59],
+        #                     [509.44885, 545.94147]
+        #                     ], dtype=np.float32).tolist()
+        initial_points = self._reference_points.tolist()
         p1 = initial_points[0]
         p2 = initial_points[1]
         p3 = initial_points[2]
@@ -307,7 +335,6 @@ class Processing:
                 w2 = (j / ns1) * (ns1 - i) / ns1  # top right point
                 w4 = (i / ns1) * (ns1 - j) / ns1  # The 'bottom left' point, p4
                 w3 = ((ns1 - i) * (ns1 - j)) / (ns1 ** 2)  # The diagonal point, p3
-
                 x = p4[0] * w1 + p3[0] * w2 + p2[0] * w3 + p1[0] * w4
                 y = p4[1] * w1 + p3[1] * w2 + p2[1] * w3 + p1[1] * w4
 
