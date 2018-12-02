@@ -210,6 +210,12 @@ class Processing:
             if pt in temp:
                 final_grid[self._detected_electrodes.shape[0]+len(self._reference_points)+ct] = self._full_detected_electrodes[pt]
                 ct+=1
+
+        hacked_ordering = [45, 62, 0, 1, 2, 5, 54, 44, 63, 3, 4, 61, 6, 57, 53, 51, 29, 30, 7, 41, 9, 12, 52, 50, 8, 10,
+                           11, 13, 14, 16, 18, 49, 31, 32, 15, 17, 35, 20, 22, 48, 33, 34, 19, 21, 60, 38, 25, 47, 36,
+                           37, 23, 24, 59, 56, 27, 46, 42, 39, 26, 40, 58, 55, 28, 43]
+
+        final_grid = np.asarray([final_grid[i] for i in hacked_ordering])
         return final_grid, 0.0
 
     def _create_grid(self):
@@ -525,6 +531,7 @@ class Processing:
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
+    from lkopticalflow import LKOpticalFlow
 
     config = dict()
     config['path'] = r'/hpc/mosa004/Sparc/Heart/ImagesSmallSample'
@@ -532,6 +539,73 @@ if __name__ == '__main__':
     config['frame2'] = 'HeartVideo0003.jpg'
     config['output_path'] = r'/hpc/mosa004/Sparc/Heart/output'
 
+    PS = Processing()
+
+
+    class CoordinateStore:
+        def __init__(self):
+            self.points = []
+
+        def select_point(self, event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDBLCLK:
+                cv2.circle(im, (x, y), 4, (255, 0, 0), -1)
+                self.points.append((x, y))
+
+
+    CS = CoordinateStore()
+    lk = LKOpticalFlow(win=(20, 20), max_level=2)
+
+    video = 'C:\\Users\\sparc\\demo\\data\\heart\\video\\heartBeatEdit.mp4'
+
+    cap = cv2.VideoCapture(video)
+    length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    while not cap.isOpened():
+        cap = cv2.VideoCapture(video)
+        cv2.waitKey(1000)
+        print("Wait for the header")
+    posFrame = cap.get(cv2.cv2.CAP_PROP_POS_FRAMES)
+    count = 1
+    while True:
+        flag, frameTemp = cap.read()
+        if flag:
+            frame = cv2.cvtColor(frameTemp, cv2.COLOR_BGR2RGB)
+            if count == 1:
+                im = frame
+                while 1:
+                    cv2.namedWindow('HEART VIDEO | FRAME: %s' % count)
+                    cv2.setMouseCallback('HEART VIDEO | FRAME: %s' % count, CS.select_point)
+                    cv2.imshow('HEART VIDEO | FRAME: %s' % count, im)
+
+                    k = cv2.waitKey(20) & 0xFF
+                    if k == 27:
+                        break
+                cv2.destroyAllWindows()
+
+                p0 = np.asarray(CS.points, dtype=np.float32)
+            else:
+                next_im = frame
+                p1, st, err = lk.lk(im, next_im, p0)
+
+                for points in range(len(p1)):
+                    cv2.circle(next_im, (int(p1[points][0]), int(p1[points][1])), 4, (0, 255, 0), -1)
+                posFrame = cap.get(cv2.cv2.CAP_PROP_POS_FRAMES)
+                window_title = "HEART VIDEO"
+                cv2.imshow(window_title, next_im)
+
+                im = next_im
+
+            k = cv2.waitKey(20) & 0xFF
+            print("Frame : %s" % count)
+            count+=1
+            if k == 27:
+                break
+        else:
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+
+    print("done")
     PS = Processing()
     gray, next_gray = PS.get_two_images(config['path'], config['frame1'], config['frame2'])
     flow_image = PS.get_flow(gray, next_gray)
