@@ -17,15 +17,13 @@ Topic :: Scientific/Engineering :: Medical Science Apps.
 Topic :: Scientific/Engineering :: Visualization
 Topic :: Software Development :: Libraries :: Python Modules
 """
-
 with open('README.rst') as f:
     doc_lines = f.read().split("\n")
 
-requires = ['opencv_python', 'opencv_contrib_python', 'numpy', 'scipy', 'scikit-image', 'pillow']
+requires = ['opencv_python', 'opencv_contrib_python', 'numpy', 'scipy', 'scikit_image', 'pillow']
 
 setup(
     name='sparc.videotracking',
-    # version=version,
     author='M. Osanlouy',
     author_email='mahyar@auckland.ac.nz',
     packages=['sparc', 'sparc.videotracking'],
@@ -34,7 +32,7 @@ setup(
     url='https://github.com/mahyar/heart_video_tracking',
     license='GNU GENERAL PUBLIC LICENSE',
     description=doc_lines[0],
-    classifiers=filter(None, classifiers.split("\n")),
+    classifiers=classifiers.split("\n"),
     requires=requires,
     use_scm_version=True,
     setup_requires=['setuptools_scm'],
