@@ -7,7 +7,7 @@ import os
 import cv2
 
 from PIL import Image
-import StringIO
+import io
 
 import numpy as np
 import scipy
@@ -64,7 +64,7 @@ class Processing:
 
     def read_image(self, file_name):
         if isinstance(file_name, (bytes, bytearray)):
-            pil_image = Image.open(StringIO.StringIO(file_name))
+            pil_image = Image.open(io.StringIO(file_name))
             self._image = np.array(pil_image)
         elif type(file_name) == str:
             self._image = cv2.imread(file_name, cv2.IMREAD_COLOR)
